@@ -16,6 +16,18 @@
 >
 > **macOS app (current work):** `InfernoPhone/Mac/` (XcodeGen: `xcodegen generate`, then build scheme
 > `InfernoMac`). It drives the existing Mac Inferno build in `~/Documents/iphone/InfernoData/Inferno/build`.
+> Features so far: VM list, wizard (device → iOS → jailbreak; tested versions, plus experimental behind a
+> toggle), in-app setup pipeline (download → unpack → tickets → SEP → disks → restore via companion → patch,
+> notifications, keeps Mac awake), VM | Terminal | Files tabs, device buttons over QMP, Phone Info
+> (serial/MLB/model/region via t8030 machine props), several VMs at once. VMs live in
+> `~/Library/Application Support/InfernoMac/VMs/<uuid>/`; downloaded IPSWs in `InfernoData/ipsw-cache/`
+> (shared with the companion over 9p).
+>
+> **Versions:** iPhone 11 iOS 14.0b5 = tested. iPhone 11 iOS 15.0 / 16.0 / 17.0 / 18.0 = experimental
+> (data from each IPSW's BuildManifest + Apple Wiki SEP keys). Inferno picks the SEP bypass at build time, so
+> each needs its own engine: `InfernoData/Inferno/build-sep15..18/qemu-system-aarch64` (built with
+> `-DSEP_USE_VERSION_OVERRIDE=N`; `hw/arm/apple-silicon/sep.c` in the main checkout now wraps the define in
+> `#ifndef`, default 14). iPhone 6s (`s8000`) uses a simulated SEP (no SEP keys) — research in progress.
 
 > **Latest status:** the app is **installed on the iPhone 17** as "UTM" (`com.infernophone.9ll7add265.UTM`,
 > re-signed with the existing free-account profile, has `get-task-allow`). The test VM
