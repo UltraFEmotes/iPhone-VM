@@ -42,7 +42,11 @@ final class VMRunner: ObservableObject {
             ("panic_log", 7, 8, "nvme-ns"),
         ]
         for (name, nsid, nstype, device) in namespaces {
-            args += ["-drive", "file=\(f(name)),format=raw,if=none,id=\(name)",
+            // The root disk may be stored compressed (root.qcow2) to save space.
+            let qcow = vm.file(name + ".qcow2")
+            let drive = FileManager.default.fileExists(atPath: qcow.path)
+                ? "file=\(qcow.path),format=qcow2" : "file=\(f(name)),format=raw"
+            args += ["-drive", "\(drive),if=none,id=\(name)",
                      "-device", "\(device),drive=\(name),bus=nvme-bus.0,nsid=\(nsid),nstype=\(nstype)" +
                         (device == "apple-nvram" ? ",id=nvram" : "") +
                         ",logical_block_size=4096,physical_block_size=4096"]

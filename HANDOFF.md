@@ -7,6 +7,15 @@
 > (e.g. give `spiceArguments` a flag used by `infernoBaseArguments`), rebuild the IPA, re-sign with the
 > existing profile (steps below), reinstall. Also already applied on the phone: `DebugLog` on in the VM's
 > `config.plist`, `-accel tcg,thread=multi,tb-size=256` in `inferno.json`.
+>
+> **The Mac-side copy of the test VM moved:** `out/iPhone11-iOS14.utm/Data/` now only holds `inferno.json`.
+> Its disk + boot files were moved (renamed) into the macOS app's VM folder
+> `~/Library/Application Support/InfernoMac/VMs/5DB65271-0D41-436C-A791-5B11467D5F36/`
+> (`root.qcow2`, `trustcache`, `kernelcache`, `devicetree.im4p`, `sep-firmware.img4`, …). The phone still has
+> its own full copy in the app's Documents.
+>
+> **macOS app (current work):** `InfernoPhone/Mac/` (XcodeGen: `xcodegen generate`, then build scheme
+> `InfernoMac`). It drives the existing Mac Inferno build in `~/Documents/iphone/InfernoData/Inferno/build`.
 
 > **Latest status:** the app is **installed on the iPhone 17** as "UTM" (`com.infernophone.9ll7add265.UTM`,
 > re-signed with the existing free-account profile, has `get-task-allow`). The test VM
