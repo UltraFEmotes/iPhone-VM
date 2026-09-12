@@ -27,7 +27,22 @@
 > (data from each IPSW's BuildManifest + Apple Wiki SEP keys). Inferno picks the SEP bypass at build time, so
 > each needs its own engine: `InfernoData/Inferno/build-sep15..18/qemu-system-aarch64` (built with
 > `-DSEP_USE_VERSION_OVERRIDE=N`; `hw/arm/apple-silicon/sep.c` in the main checkout now wraps the define in
-> `#ifndef`, default 14). iPhone 6s (`s8000`) uses a simulated SEP (no SEP keys) — research in progress.
+> `#ifndef`, default 14). All four `build-sep15..18` engines are built and signed.
+>
+> **iPhone 6s Plus** (`s8000` = N66, `iPhone8,2`, *not* the plain 6s): iOS 14.0 (18A373) and 15.0 (19A346)
+> as experimental entries (`usesSEPSim: true`). Its SEP is simulated, so setup skips the SEP ROM / SEP ticket /
+> SEP firmware steps and the launcher omits `sep-fw`, `sep-rom` and the SEP pflash drives. Only release kernels
+> ship in these IPSWs (no research kernel) — the biggest open question for booting. No Phone Info on s8000
+> (it has no serial/model machine properties).
+>
+> **Carrier console** (Shift-Cmd-K window): assign custom numbers per VM, device online status, admin
+> messages to one/all, texts and calls between numbers, traffic log (`~/Library/Application Support/InfernoMac/
+> carrier.json`). Delivery *into* iOS isn't built yet (`LogOnlyDelivery`); waiting on the owner's choice:
+> notification, a Carrier inbox app, or Messages. Any in-VM delivery needs a way into the guest — realistically
+> the jailbreak bootstrap's root shell on the serial console (iOS 14/15 only).
+>
+> **Not tested yet:** every experimental version (none has been set up end-to-end). Each download is 4.5–8 GB and
+> the Mac has ~13 GB free, so test one at a time.
 
 > **Latest status:** the app is **installed on the iPhone 17** as "UTM" (`com.infernophone.9ll7add265.UTM`,
 > re-signed with the existing free-account profile, has `get-task-allow`). The test VM
