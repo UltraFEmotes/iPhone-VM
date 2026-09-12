@@ -11,13 +11,19 @@ struct NewVMWizard: View {
     @State private var jailbroken = false
     @State private var name = ""
     @State private var error: String?
+    @State private var showExperimental = false
+
+    /// Tested entries always; experimental ones only when the user opts in.
+    private var offered: [SupportEntry] {
+        store.manifest.entries.filter { $0.isTested || (showExperimental && $0.isExperimental) }
+    }
 
     private var devices: [String] {
-        Array(Set(store.manifest.testedEntries.map(\.deviceName))).sorted()
+        Array(Set(offered.map(\.deviceName))).sorted()
     }
 
     private var versions: [SupportEntry] {
-        store.manifest.testedEntries.filter { $0.deviceName == deviceName }
+        offered.filter { $0.deviceName == deviceName }
     }
 
     private var selectedEntry: SupportEntry? {
@@ -35,10 +41,14 @@ struct NewVMWizard: View {
                 }
                 Picker("iOS version", selection: $entryID) {
                     Text("Choose…").tag(String?.none)
-                    ForEach(versions) { Text("iOS \($0.ios) (\($0.build))").tag(String?.some($0.id)) }
+                    ForEach(versions) { e in
+                        Text("iOS \(e.ios) (\(e.build))" + (e.isExperimental ? " — Experimental" : "")).tag(String?.some(e.id))
+                    }
                 }
                 .disabled(deviceName == nil)
 
+                Toggle("Show experimental versions", isOn: $showExperimental)
+                    .help("Versions that haven't booted yet on this setup. They may fail during restore or boot.")
                 Toggle("Jailbroken", isOn: $jailbroken)
                 if jailbroken, let entry = selectedEntry {
                     Text(jailbreakNote(entry)).font(.caption).foregroundStyle(.secondary)

@@ -31,8 +31,13 @@ struct SupportEntry: Codable, Identifiable, Hashable {
     var memory: String
     var cpus: Int
     var jailbreak: Jailbreak
+    /// Inferno bakes the SEP bypass per iOS major version at build time (SEP_USE_VERSION_OVERRIDE).
+    var sepVersion: Int?
+    /// iPhone 6s (s8000) simulates the SEP in software: no SEP firmware/ROM or SEP ticket needed.
+    var usesSEPSim: Bool?
 
     var isTested: Bool { status == "tested" }
+    var isExperimental: Bool { status == "experimental" }
 }
 
 struct SupportManifest: Codable {

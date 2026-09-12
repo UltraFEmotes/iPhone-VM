@@ -45,6 +45,12 @@ enum InfernoPaths {
     static let dataRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Documents/iphone/InfernoData", isDirectory: true)
     static let qemu = dataRoot.appendingPathComponent("Inferno/build/qemu-system-aarch64")
+
+    /// Engine build matching the entry's SEP version: iOS 14 uses the main build, 15–18 use build-sepN.
+    static func qemu(forSEP version: Int?) -> URL {
+        guard let version, version != 14 else { return qemu }
+        return dataRoot.appendingPathComponent("Inferno/build-sep\(version)/qemu-system-aarch64")
+    }
     static let qemuImg = dataRoot.appendingPathComponent("Inferno/build/qemu-img")
     static let startCompanion = dataRoot.appendingPathComponent("start_companion.sh")
 }

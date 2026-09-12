@@ -62,7 +62,12 @@ final class VMRunner: ObservableObject {
         guard !isRunning else { return }
         try? FileManager.default.removeItem(at: qmpSocket)
         let p = Process()
-        p.executableURL = InfernoPaths.qemu
+        let engine = InfernoPaths.qemu(forSEP: entry.sepVersion)
+        guard FileManager.default.isExecutableFile(atPath: engine.path) else {
+            append("[missing Inferno engine for iOS \(entry.sepVersion ?? 14): \(engine.path)]\n")
+            return
+        }
+        p.executableURL = engine
         p.arguments = arguments(restoreMode: restoreMode)
         p.currentDirectoryURL = vm.folder
         let out = Pipe(), input = Pipe()
