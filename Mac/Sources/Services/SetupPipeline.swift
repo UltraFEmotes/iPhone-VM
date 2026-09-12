@@ -112,6 +112,14 @@ final class SetupPipeline: ObservableObject {
         if let size = try? FileManager.default.attributesOfItem(atPath: ipswFile.path)[.size] as? Int64, size == entry.ipswSize {
             append("already downloaded"); return
         }
+        // Only one download per IPSW file, even across VMs sharing the cache.
+        let lock = ipswFile.appendingPathExtension("lock")
+        let fd = open(lock.path, O_CREAT | O_RDWR, 0o644)
+        guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            if fd >= 0 { close(fd) }
+            throw SetupError("This firmware is already being downloaded by another setup. Try again when it finishes.")
+        }
+        defer { flock(fd, LOCK_UN); close(fd); try? FileManager.default.removeItem(at: lock) }
         // curl resumes partial downloads (-C -) and reports progress we parse into `progress`.
         try await Shell.run("/usr/bin/curl", ["-L", "-f", "-C", "-", "-o", ipswFile.path, "-#", entry.ipswURL.absoluteString]) { line in
             if let pct = line.split(separator: " ").last(where: { $0.hasSuffix("%") }).flatMap({ Double($0.dropLast()) }) {

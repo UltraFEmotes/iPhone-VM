@@ -5,6 +5,15 @@ import Foundation
 @MainActor
 final class RunnerRegistry: ObservableObject {
     @Published private var runners: [UUID: VMRunner] = [:]
+    /// One setup pipeline per VM for the whole session, so redrawing the Set Up screen never starts a second one.
+    private var pipelines: [UUID: SetupPipeline] = [:]
+
+    func pipeline(for vm: VirtualMachine, entry: SupportEntry, store: VMStore) -> SetupPipeline {
+        if let existing = pipelines[vm.id] { return existing }
+        let pipeline = SetupPipeline(vm: vm, entry: entry, store: store)
+        pipelines[vm.id] = pipeline
+        return pipeline
+    }
 
     func runner(for vm: VirtualMachine, entry: SupportEntry) -> VMRunner {
         if let existing = runners[vm.id] {

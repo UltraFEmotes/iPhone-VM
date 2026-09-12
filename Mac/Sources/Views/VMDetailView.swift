@@ -56,7 +56,7 @@ struct VMDetailView: View {
         if vm.state == .ready || runner.isRunning {
             devicePane
         } else {
-            SetupPane(vm: vm, entry: entry, store: store)
+            SetupPane(vm: vm, entry: entry, pipeline: registry.pipeline(for: vm, entry: entry, store: store))
         }
     }
 

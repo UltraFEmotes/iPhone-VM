@@ -4,13 +4,7 @@ import SwiftUI
 struct SetupPane: View {
     let vm: VirtualMachine
     let entry: SupportEntry
-    @StateObject private var pipeline: SetupPipeline
-
-    init(vm: VirtualMachine, entry: SupportEntry, store: VMStore) {
-        self.vm = vm
-        self.entry = entry
-        _pipeline = StateObject(wrappedValue: SetupPipeline(vm: vm, entry: entry, store: store))
-    }
+    @ObservedObject var pipeline: SetupPipeline
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
