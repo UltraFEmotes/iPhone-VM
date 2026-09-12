@@ -6,12 +6,35 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
         case new, downloading, preparing, restoring, patching, ready, failed
     }
 
+    /// Device identity passed to Inferno's machine properties. Empty = Inferno's default.
+    /// ECID is not editable here: the restore's boot ticket and SEP data are tied to it.
+    struct PhoneIdentity: Codable, Hashable {
+        var serialNumber = ""
+        var mlbSerial = ""
+        var modelNumber = ""
+        var regionInfo = ""
+        var regulatoryModel = ""
+        var configNumber = ""
+
+        /// `-M t8030,...` properties for the non-empty fields (commas would break QEMU's option parsing).
+        var machineProperties: [String] {
+            let pairs = [("serial-number", serialNumber), ("mlb", mlbSerial), ("model", modelNumber),
+                         ("region-info", regionInfo), ("regulatory-model", regulatoryModel),
+                         ("config-number", configNumber)]
+            return pairs.compactMap { key, value in
+                let clean = value.replacingOccurrences(of: ",", with: "").trimmingCharacters(in: .whitespaces)
+                return clean.isEmpty ? nil : "\(key)=\(clean)"
+            }
+        }
+    }
+
     var id: UUID
     var name: String
     var entryID: String
     var jailbroken: Bool
     var state: SetupState
     var createdAt: Date
+    var identity: PhoneIdentity? = nil
 
     var folder: URL { VMStore.vmsRoot.appendingPathComponent(id.uuidString, isDirectory: true) }
     func file(_ name: String) -> URL { folder.appendingPathComponent(name) }

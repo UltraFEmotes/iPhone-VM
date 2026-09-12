@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var store: VMStore
+    @EnvironmentObject private var registry: RunnerRegistry
     @State private var selection: VirtualMachine.ID?
     @State private var showingWizard = false
 
@@ -31,7 +32,7 @@ struct ContentView: View {
         } detail: {
             if let id = selection, let vm = store.machines.first(where: { $0.id == id }),
                let entry = store.entry(for: vm) {
-                VMDetailView(vm: vm, entry: entry).id(vm.id)
+                VMDetailView(vm: vm, entry: entry, runner: registry.runner(for: vm, entry: entry)).id(vm.id)
             } else {
                 ContentUnavailableView("Select a VM", systemImage: "cursorarrow.click")
             }

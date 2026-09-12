@@ -24,8 +24,9 @@ final class VMRunner: ObservableObject {
     /// Inferno machine arguments for a restored, patched VM (same layout as InfernoData/start_iphone.sh).
     func arguments(restoreMode: Bool = false) -> [String] {
         let f = { (name: String) in self.vm.file(name).path }
+        let identity = (vm.identity?.machineProperties ?? []).map { "," + $0 }.joined()
         var args = [
-            "-M", "\(entry.machine),trustcache=\(f("trustcache")),ticket=\(f("root_ticket.der")),sep-fw=\(f("sep-firmware.img4")),sep-rom=\(f(entry.sepROM)),kaslr-off=true",
+            "-M", "\(entry.machine),trustcache=\(f("trustcache")),ticket=\(f("root_ticket.der")),sep-fw=\(f("sep-firmware.img4")),sep-rom=\(f(entry.sepROM)),kaslr-off=true" + identity,
             "-kernel", f("kernelcache"),
             "-dtb", f("devicetree.im4p"),
             "-append", entry.bootArgs + (vm.jailbroken ? " launchd_unsecure_cache=1" : ""),
