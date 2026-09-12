@@ -40,8 +40,11 @@ struct VMDetailView: View {
         .navigationTitle(vm.name)
         .navigationSubtitle("\(entry.deviceName) · iOS \(entry.ios)")
         .toolbar {
-            Button { showingPhoneInfo = true } label: { Label("Phone Info", systemImage: "person.text.rectangle") }
-                .help("Serial number, model, region… (applies on next start)")
+            // Serial/model/region properties exist only on the iPhone 11 (t8030) machine.
+            if entry.machine == "t8030" {
+                Button { showingPhoneInfo = true } label: { Label("Phone Info", systemImage: "person.text.rectangle") }
+                    .help("Serial number, model, region… (applies on next start)")
+            }
         }
         .sheet(isPresented: $showingPhoneInfo, onDismiss: { reloadRunnerIfStopped() }) {
             PhoneInfoView(vm: vm)

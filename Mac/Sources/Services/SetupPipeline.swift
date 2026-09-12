@@ -58,6 +58,12 @@ final class SetupPipeline: ObservableObject {
         Task {
             defer { isRunning = false; keepAwake.end(); progress = nil }
             for step in Step.allCases where states[step] != .done {
+                if entry.usesSEPSim == true, [.downloadSEPROM, .sepFirmware].contains(step) {
+                    states[step] = .done
+                    append("== \(step.title): not needed (simulated Secure Enclave)")
+                    markFinished(step)
+                    continue
+                }
                 states[step] = .running
                 append("== \(step.title)")
                 do {
@@ -138,9 +144,17 @@ final class SetupPipeline: ObservableObject {
         let py = InfernoPaths.dataRoot.appendingPathComponent("venv/bin/python").path
         let shsh = InfernoPaths.dataRoot.appendingPathComponent("ticket.shsh2").path
         let manifest = restoreDir.appendingPathComponent("BuildManifest.plist").path
-        for (script, out) in [("create_apticket.py", "root_ticket.der"), ("create_septicket.py", "sep_root_ticket.der")] {
-            try await Shell.run(py, [InfernoPaths.dataRoot.appendingPathComponent(script).path, entry.board,
-                                     manifest, shsh, vm.file(out).path], onLine: logLine)
+        let simulatedSEP = entry.usesSEPSim == true
+        let tickets = simulatedSEP ? [("create_apticket.py", "root_ticket.der")]
+            : [("create_apticket.py", "root_ticket.der"), ("create_septicket.py", "sep_root_ticket.der")]
+        for (script, out) in tickets {
+            do {
+                try await Shell.run(py, [InfernoPaths.dataRoot.appendingPathComponent(script).path, entry.board,
+                                         manifest, shsh, vm.file(out).path], onLine: logLine)
+            } catch where simulatedSEP {
+                // This machine boots without an AP ticket; carry on without one.
+                append("AP ticket not created (\(error.localizedDescription)); continuing without it")
+            }
         }
     }
 
@@ -159,8 +173,11 @@ final class SetupPipeline: ObservableObject {
     }
 
     private func createDisks() async throws {
-        let sizes = [("root", "32G"), ("firmware", "8M"), ("syscfg", "128K"), ("ctrl_bits", "8K"), ("nvram", "8K"),
-                     ("effaceable", "4K"), ("panic_log", "1M"), ("sep_nvram", "64K"), ("sep_ssc", "128K")]
+        var sizes = [("root", "32G"), ("firmware", "8M"), ("syscfg", "128K"), ("ctrl_bits", "8K"), ("nvram", "8K"),
+                     ("effaceable", "4K"), ("panic_log", "1M")]
+        if entry.usesSEPSim != true {
+            sizes += [("sep_nvram", "64K"), ("sep_ssc", "128K")]
+        }
         for (name, size) in sizes where !FileManager.default.fileExists(atPath: vm.file(name).path) {
             try await Shell.run(InfernoPaths.qemuImg.path, ["create", "-f", "raw", vm.file(name).path, size])
         }

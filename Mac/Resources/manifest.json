@@ -150,6 +150,68 @@
         "packageManager": null,
         "tweaks": "untested"
       }
+    },
+    {
+      "deviceName": "iPhone 6s Plus",
+      "device": "iPhone8,2",
+      "board": "n66ap",
+      "machine": "s8000",
+      "status": "experimental",
+      "sepVersion": 14,
+      "usesSEPSim": true,
+      "sepFirmwarePath": "Firmware/all_flash/sep-firmware.n66.RELEASE.im4p",
+      "sepIV": "",
+      "sepKey": "",
+      "sepROM": "none",
+      "sepROMURL": "https://securerom.fun/",
+      "kernelcache": "kernelcache.release.n66",
+      "deviceTree": "Firmware/all_flash/DeviceTree.n66ap.im4p",
+      "bootArgs": "tlto_us=-1 mtxspin=-1 agm-genuine=1 agm-authentic=1 agm-trusted=1 serial=3 wdt=-1",
+      "memory": "2G",
+      "cpus": 2,
+      "jailbreak": {
+        "bootstrap": true,
+        "packageManager": null,
+        "tweaks": "untested"
+      },
+      "id": "iPhone8,2-18A373",
+      "ios": "14.0",
+      "build": "18A373",
+      "ipswURL": "https://updates.cdn-apple.com/2020SummerFCS/fullrestores/001-46544/A80E6569-B789-41B4-B599-17838B78678B/iPhone_5.5_14.0_18A373_Restore.ipsw",
+      "ipswSize": 4661352271,
+      "trustcache": "Firmware/048-58904-639.dmg.trustcache",
+      "eraseRamdisk": "048-58904-639.dmg"
+    },
+    {
+      "deviceName": "iPhone 6s Plus",
+      "device": "iPhone8,2",
+      "board": "n66ap",
+      "machine": "s8000",
+      "status": "experimental",
+      "sepVersion": 14,
+      "usesSEPSim": true,
+      "sepFirmwarePath": "Firmware/all_flash/sep-firmware.n66.RELEASE.im4p",
+      "sepIV": "",
+      "sepKey": "",
+      "sepROM": "none",
+      "sepROMURL": "https://securerom.fun/",
+      "kernelcache": "kernelcache.release.n66",
+      "deviceTree": "Firmware/all_flash/DeviceTree.n66ap.im4p",
+      "bootArgs": "tlto_us=-1 mtxspin=-1 agm-genuine=1 agm-authentic=1 agm-trusted=1 serial=3 wdt=-1",
+      "memory": "2G",
+      "cpus": 2,
+      "jailbreak": {
+        "bootstrap": true,
+        "packageManager": null,
+        "tweaks": "untested"
+      },
+      "id": "iPhone8,2-19A346",
+      "ios": "15.0",
+      "build": "19A346",
+      "ipswURL": "https://updates.cdn-apple.com/2021FallFCS/fullrestores/002-03194/8EC63AF9-19BE-4829-B389-27AECB41DD6A/iPhone_5.5_15.0_19A346_Restore.ipsw",
+      "ipswSize": 5494658596,
+      "trustcache": "Firmware/018-79907-001.dmg.trustcache",
+      "eraseRamdisk": "018-79907-001.dmg"
     }
   ]
 }

@@ -24,9 +24,18 @@ final class VMRunner: ObservableObject {
     /// Inferno machine arguments for a restored, patched VM (same layout as InfernoData/start_iphone.sh).
     func arguments(restoreMode: Bool = false) -> [String] {
         let f = { (name: String) in self.vm.file(name).path }
-        let identity = (vm.identity?.machineProperties ?? []).map { "," + $0 }.joined()
+        let simulatedSEP = entry.usesSEPSim == true
+        // Phone Info properties exist only on the iPhone 11 (t8030) machine.
+        let identity = entry.machine == "t8030" ? (vm.identity?.machineProperties ?? []).map { "," + $0 }.joined() : ""
+        var machine = "\(entry.machine),trustcache=\(f("trustcache")),kaslr-off=true"
+        if !simulatedSEP || FileManager.default.fileExists(atPath: f("root_ticket.der")) {
+            machine += ",ticket=\(f("root_ticket.der"))"
+        }
+        if !simulatedSEP {
+            machine += ",sep-fw=\(f("sep-firmware.img4")),sep-rom=\(f(entry.sepROM))"
+        }
         var args = [
-            "-M", "\(entry.machine),trustcache=\(f("trustcache")),ticket=\(f("root_ticket.der")),sep-fw=\(f("sep-firmware.img4")),sep-rom=\(f(entry.sepROM)),kaslr-off=true" + identity,
+            "-M", machine + identity,
             "-kernel", f("kernelcache"),
             "-dtb", f("devicetree.im4p"),
             "-append", entry.bootArgs + (vm.jailbroken ? " launchd_unsecure_cache=1" : ""),
@@ -34,9 +43,12 @@ final class VMRunner: ObservableObject {
             "-serial", "stdio", "-monitor", "none",
             "-qmp", "unix:\(qmpSocket.path),server=on,wait=off",
             "-display", "cocoa,zoom-to-fit=on,zoom-interpolation=on,show-cursor=on",
-            "-drive", "file=\(f("sep_nvram")),if=pflash,format=raw",
-            "-drive", "file=\(f("sep_ssc")),if=pflash,format=raw",
         ]
+        if !simulatedSEP {
+            // SEP storage flash (t8030); the s8000 simulated SEP has no pflash.
+            args += ["-drive", "file=\(f("sep_nvram")),if=pflash,format=raw",
+                     "-drive", "file=\(f("sep_ssc")),if=pflash,format=raw"]
+        }
         let namespaces: [(String, Int, Int, String)] = [
             ("root", 1, 1, "nvme-ns"), ("firmware", 2, 2, "nvme-ns"), ("syscfg", 3, 3, "nvme-ns"),
             ("ctrl_bits", 4, 4, "nvme-ns"), ("nvram", 5, 5, "apple-nvram"), ("effaceable", 6, 6, "nvme-ns"),
