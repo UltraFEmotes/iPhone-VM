@@ -1,0 +1,32 @@
+name: InfernoMac
+options:
+  bundleIdPrefix: com.infernophone.mac
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  InfernoMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: InfernoMac
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "Personal use. Runs ChefKiss Inferno (GPL/AGPL)."
+    entitlements:
+      path: Sources/InfernoMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
