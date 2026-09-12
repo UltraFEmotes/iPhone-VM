@@ -43,7 +43,18 @@ struct VMDetailView: View {
         .navigationSubtitle("\(entry.deviceName) · iOS \(entry.ios)")
     }
 
+    @EnvironmentObject private var store: VMStore
+
+    @ViewBuilder
     private var vmPane: some View {
+        if vm.state == .ready || runner.isRunning {
+            devicePane
+        } else {
+            SetupPane(vm: vm, entry: entry, store: store)
+        }
+    }
+
+    private var devicePane: some View {
         VStack(spacing: 18) {
             Image(systemName: runner.isRunning ? "iphone.gen3.radiowaves.left.and.right" : "iphone.gen3")
                 .font(.system(size: 64))
