@@ -1,0 +1,79 @@
+name: windows
+# Experimental: does Inferno build natively on Windows (MSYS2 / UCRT64)? Upstream CI only builds Linux and macOS.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - windows-build
+
+jobs:
+  build_windows:
+    name: Windows Build (MSYS2, experimental)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils bison flex tar patch
+          pacboy: >-
+            toolchain:p meson:p ninja:p pkgconf:p cmake:p python:p glib2:p pixman:p
+            gnutls:p nettle:p libslirp:p libssh:p lzo2:p snappy:p zstd:p libpng:p
+            libjpeg-turbo:p SDL2:p dtc:p libusb:p curl:p
+
+      - name: Build lzfse (not packaged in MSYS2)
+        run: |
+          git clone --depth 1 https://github.com/lzfse/lzfse /tmp/lzfse
+          cmake -S /tmp/lzfse -B /tmp/lzfse/build -G Ninja -DCMAKE_INSTALL_PREFIX=/ucrt64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          ninja -C /tmp/lzfse/build install
+
+      - name: Configure
+        run: |
+          mkdir -p build && cd build
+          ../configure --target-list=aarch64-softmmu,x86_64-softmmu --disable-guest-agent \
+            --enable-lzfse --enable-slirp --enable-libssh --enable-zstd --enable-nettle --enable-gnutls \
+            --enable-sdl --disable-gtk --disable-werror --disable-qom-cast-debug --disable-debug-info \
+            2>&1 | tee ../configure.log
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Build (keep going to list every error)
+        run: |
+          cd build
+          ninja -k 0 2>&1 | tee ../build.log
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            configure.log
+            build.log
+            build/meson-logs/meson-log.txt
+          if-no-files-found: ignore
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build/qemu-system-aarch64.exe build/qemu-system-x86_64.exe build/qemu-img.exe dist/
+          for exe in dist/*.exe; do ldd "$exe" | awk '/ucrt64/ {print $3}'; done | sort -u | xargs -I{} cp -n {} dist/
+          cp pc-bios/*.bin pc-bios/*.rom pc-bios/*.fd dist/ 2>/dev/null || true
+          ls -la dist | head -80
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inferno-windows-x64
+          path: dist

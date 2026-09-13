@@ -1,0 +1,45 @@
+name: InfernoMac
+options:
+  bundleIdPrefix: com.infernophone.mac
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.2.0
+targets:
+  InfernoMac:
+    type: application
+    platform: macOS
+    dependencies:
+      - package: SwiftTerm
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+      # Shared with the Windows app: companion VM setup files and the ticket/restore tools.
+      - path: ../Windows/wsl/companion-files
+        type: folder
+        buildPhase: resources
+      - path: ../Windows/wsl/tools
+        type: folder
+        buildPhase: resources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: InfernoMac
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "Personal use. Runs ChefKiss Inferno (GPL/AGPL)."
+    entitlements:
+      path: Sources/InfernoMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: false

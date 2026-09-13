@@ -1,0 +1,10 @@
+deps/
+out/
+App/
+Mac/InfernoMac.xcodeproj/
+
+# Windows (WPF) build output
+Windows/InfernoWin/bin/
+Windows/InfernoWin/obj/
+
+.DS_Store

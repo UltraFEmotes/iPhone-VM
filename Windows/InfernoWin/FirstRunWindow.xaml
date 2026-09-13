@@ -1,0 +1,29 @@
+<Window x:Class="InfernoWin.FirstRunWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set Up InfernoWin" Width="760" Height="560" WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="18">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="InfernoWin runs the iPhone emulator inside WSL2 (Linux on Windows)." FontSize="15" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Margin="0,6,0,12" Foreground="Gray">
+                One-time setup: install WSL2 with Ubuntu, then build the Inferno emulator and create the companion VM
+                inside it. Building takes 20–60 minutes and needs about 15 GB. The iPhone is emulated in software on
+                Windows, so it runs much slower than on an Apple Silicon Mac.
+            </TextBlock>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="1." FontWeight="SemiBold" Width="20"/>
+                <TextBlock x:Name="WslStatus" Text="Checking WSL…" Width="420"/>
+                <Button x:Name="InstallWslButton" Content="Install WSL2 + Ubuntu" Padding="10,2" Click="InstallWsl_Click" Visibility="Collapsed"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <TextBlock Text="2." FontWeight="SemiBold" Width="20"/>
+                <TextBlock x:Name="BuildStatus" Text="Build the emulator and companion VM" Width="420"/>
+                <Button x:Name="BuildButton" Content="Start Setup" Padding="10,2" Click="Build_Click" IsEnabled="False"/>
+            </StackPanel>
+        </StackPanel>
+        <Button DockPanel.Dock="Bottom" x:Name="DoneButton" Content="Done" Width="90" HorizontalAlignment="Right"
+                Margin="0,10,0,0" Click="Done_Click" IsEnabled="False"/>
+        <TextBox x:Name="LogBox" IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Background="#111" Foreground="#ddd"/>
+    </DockPanel>
+</Window>

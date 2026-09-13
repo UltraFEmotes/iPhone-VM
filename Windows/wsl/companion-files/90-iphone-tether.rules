@@ -1,0 +1,3 @@
+# Inferno iPhone reverse tethering: run on add and on the usb0 -> enxdeadbeef* rename
+ACTION=="add|move", SUBSYSTEM=="net", ATTR{address}=="de:ad:be:ef:*", RUN+="/usr/bin/systemctl --no-block start iphone-tether.service"
+ACTION=="add|move", SUBSYSTEM=="net", KERNEL=="enxdeadbeef*", RUN+="/usr/bin/systemctl --no-block start iphone-tether.service"
