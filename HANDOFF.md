@@ -308,3 +308,7 @@ A modem boot also needs `/System/Library/Caches/com.apple.factorydata` (created 
 - 2026-09-13: added `Linux/iphone-vm` (command-line version on the same bash backend as InfernoWin), release v0.2.0-experimental.
   Tested on Debian arm64 (in the Mac companion) up to setup; install/setup/start not yet run end-to-end on Linux.
   The iPhone VM is software-emulated (TCG) on every platform. Inferno has no hypervisor support for t8030/s8000.
+- 2026-09-13: added `Linux/webui.py` + `iphone-vm web <port>` (browser UI for headless/hosting), release v0.3.0-experimental.
+  Shares the CLI's data dir; SSE serial console, VNC screen via websockify+noVNC (one port per VM from 6080).
+  start_vm.sh now honours INFERNO_DISPLAY (vnc=/none) and INFERNO_SERIAL (tcp:). Tested to the API level in the
+  Debian companion; noVNC screen and a real VM boot over the web UI are NOT yet tested. Model since this turn: Opus 4.8.
