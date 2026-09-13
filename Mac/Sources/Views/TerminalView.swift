@@ -3,7 +3,6 @@ import SwiftUI
 /// Live serial log of the VM, with an input line wired to the guest serial console.
 struct TerminalView: View {
     @ObservedObject var runner: VMRunner
-    @State private var input = ""
     @State private var autoScroll = true
     @State private var filter = ""
     @State private var showLog = false
@@ -66,21 +65,6 @@ struct TerminalView: View {
                     if autoScroll { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
-
-            HStack {
-                TextField("Send to serial console", text: $input)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.body, design: .monospaced))
-                    .onSubmit(send)
-                Button("Send", action: send).disabled(!runner.isRunning || input.isEmpty)
-            }
-            .padding(8)
         }
-    }
-
-    private func send() {
-        guard runner.isRunning, !input.isEmpty else { return }
-        runner.sendToSerial(input)
-        input = ""
     }
 }
