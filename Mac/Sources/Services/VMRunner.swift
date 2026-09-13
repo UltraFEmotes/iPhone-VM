@@ -184,27 +184,58 @@ final class VMRunner: ObservableObject {
         }
     }
 
-    /// Installs the Zebra package manager through the jailbreak's root shell on the serial console.
-    /// Needs the VM to have internet. The dpkg database starts empty (the bootstrap's copy is hidden
-    /// under the Data volume), so the debs are installed with dpkg --force-depends instead of apt.
-    func installZebra() {
-        note("installing Zebra (needs internet; watch the output below)")
-        let commands = [
-            "mount -uw /",
-            "mkdir -p /var/lib/dpkg/info /var/lib/dpkg/updates /var/lib/apt/lists/partial /var/cache/apt/archives/partial",
-            "touch /var/lib/dpkg/status /var/lib/dpkg/available",
-            "mkdir -p /etc/apt/sources.list.d",
-            // Elucubratus (the checkra1n bootstrap's repo) for iOS 14 = CoreFoundation 1700
+    /// Remounts the System volume read-write and creates the dpkg/apt folders (lasts until reboot).
+    func makeSystemWritable() {
+        note("remounting / read-write")
+        ["mount -uw /",
+         "mkdir -p /var/lib/dpkg/info /var/lib/dpkg/updates /var/lib/apt/lists/partial /var/cache/apt/archives/partial /etc/apt/sources.list.d",
+         "touch /var/lib/dpkg/status /var/lib/dpkg/available",
+         "mount | grep ' / ' && echo SYSTEM_WRITABLE"].forEach(sendToSerial)
+    }
+
+    enum PackageManager: String, CaseIterable, Identifiable {
+        case zebra = "Zebra", sileo = "Sileo"
+        var id: String { rawValue }
+        var sourceLine: String {
+            switch self {
+            case .zebra: return "deb [trusted=yes] https://getzbra.com/repo/ ./"
+            case .sileo: return "deb [trusted=yes] https://repo.getsileo.app/ ./"
+            }
+        }
+        var package: String { self == .zebra ? "xyz.willy.zebra" : "org.coolstar.sileo" }
+        var app: String { "/Applications/\(rawValue).app" }
+    }
+
+    /// Installs a package manager through the jailbreak's root shell on the serial console (needs internet).
+    /// The dpkg database starts empty (the bootstrap's copy is hidden under the Data volume), so the
+    /// debs are installed with dpkg --force-depends instead of apt.
+    func install(_ manager: PackageManager) {
+        note("installing \(manager.rawValue) (needs internet; watch the output below)")
+        makeSystemWritable()
+        let list = manager.rawValue.lowercased()
+        [   // Elucubratus (the checkra1n bootstrap's repo) for iOS 14 = CoreFoundation 1700
             "echo 'deb https://apt.bingner.com/ ios/1700.00 main' > /etc/apt/sources.list.d/bingner.list",
-            "echo 'deb [trusted=yes] https://getzbra.com/repo/ ./' > /etc/apt/sources.list.d/zebra.list",
+            "echo '\(manager.sourceLine)' > /etc/apt/sources.list.d/\(list).list",
             "apt-get update",
-            "cd /tmp && apt-get download --allow-unauthenticated xyz.willy.zebra uikittools",
-            "dpkg -i --force-depends --force-overwrite /tmp/*.deb",
-            "uicache -p /Applications/Zebra.app",
+            "mkdir -p /tmp/debs && cd /tmp/debs && rm -f *.deb && apt-get download --allow-unauthenticated \(manager.package) uikittools",
+            "dpkg -i --force-depends --force-overwrite /tmp/debs/*.deb",
+            "uicache -p \(manager.app)",
+            "echo \(manager.rawValue.uppercased())_INSTALL_DONE",
             "killall -9 SpringBoard",
-            "echo ZEBRA_INSTALL_DONE",
-        ]
-        for command in commands { sendToSerial(command) }
+        ].forEach(sendToSerial)
+    }
+
+    /// Restarts the companion's tethering (DHCP/NAT) in case the VM lost internet.
+    func restartInternet() async {
+        note("restarting USB internet on the companion…")
+        let out = await Companion.run("sudo systemctl restart usbmuxd; sudo systemctl restart iphone-tether.service; sudo systemctl restart dnsmasq; ip -br addr | grep enx || echo 'no iPhone network interface yet'")
+        note(out.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Checks internet from inside the VM (output lands in this log).
+    func checkInternet() {
+        note("testing internet from the VM")
+        sendToSerial("ifconfig | grep 'inet ' ; curl -sI https://apple.com | head -1 || echo NO_INTERNET")
     }
 
     /// Inferno maps the device buttons to function keys (see the Inferno guide).

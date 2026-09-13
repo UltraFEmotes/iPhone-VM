@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct VMDetailView: View {
-    enum Tab: String, CaseIterable { case vm = "VM", terminal = "Terminal", files = "Files" }
+    enum Tab: String, CaseIterable { case vm = "VM", terminal = "Terminal", files = "Files", jailbreak = "Jailbreak", misc = "Misc" }
+
+    private var tabs: [Tab] { Tab.allCases.filter { $0 != .jailbreak || vm.jailbroken } }
 
     let vm: VirtualMachine
     let entry: SupportEntry
@@ -15,10 +17,10 @@ struct VMDetailView: View {
         VStack(spacing: 0) {
             HStack {
                 Picker("", selection: $tab) {
-                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(tabs, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 300)
+                .frame(width: CGFloat(tabs.count) * 90)
                 Spacer()
                 if runner.isRunning {
                     Button("Stop", role: .destructive) { runner.stop() }
@@ -35,6 +37,8 @@ struct VMDetailView: View {
             case .vm: vmPane
             case .terminal: TerminalView(runner: runner)
             case .files: FileExplorerView(vm: vm, isRunning: runner.isRunning)
+            case .jailbreak: jailbreakPane
+            case .misc: miscPane
             }
         }
         .navigationTitle(vm.name)
@@ -72,21 +76,6 @@ struct VMDetailView: View {
                 }
             }
             .disabled(!runner.isRunning)
-            HStack {
-                Button("Send Trust Prompt") {
-                    tab = .terminal
-                    Task { await runner.sendTrustPrompt() }
-                }
-                .help("Ask iOS to trust the companion (needed once for USB internet)")
-                if vm.jailbroken {
-                    Button("Install Zebra") {
-                        tab = .terminal
-                        runner.installZebra()
-                    }
-                    .help("Install the Zebra package manager via apt (needs internet)")
-                }
-            }
-            .disabled(!runner.isRunning)
             Text("The phone screen opens in its own window while the VM runs.")
                 .font(.caption).foregroundStyle(.secondary)
             if registry.runningCount > 1 {
@@ -94,6 +83,62 @@ struct VMDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Actions run on the VM's serial root shell; output shows in the Terminal tab.
+    private var jailbreakPane: some View {
+        Form {
+            Section("System") {
+                action("Make System Writable", help: "Remounts / read-write until the next reboot") { runner.makeSystemWritable() }
+                action("Respring", help: "Restart SpringBoard (refreshes home screen icons)") { runner.sendToSerial("killall -9 SpringBoard") }
+                action("Refresh App Icons", help: "Run uicache for all apps") { runner.sendToSerial("uicache -a") }
+            }
+            Section("Package Managers (needs internet)") {
+                ForEach(VMRunner.PackageManager.allCases) { manager in
+                    action("Install \(manager.rawValue)", help: "Downloads \(manager.rawValue) and installs it with dpkg") { runner.install(manager) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .disabled(!runner.isRunning)
+        .overlay { if !runner.isRunning { Text("Start the VM to use these.").foregroundStyle(.secondary) } }
+    }
+
+    private var miscPane: some View {
+        Form {
+            Section("Internet") {
+                action("Send Trust Prompt", help: "Ask iOS to trust the companion (needed once for USB internet)") {
+                    Task { await runner.sendTrustPrompt() }
+                }
+                action("Restart Internet", help: "Restart usbmuxd, tethering and DHCP on the companion") {
+                    Task { await runner.restartInternet() }
+                }
+                if vm.jailbroken {
+                    action("Test Internet", help: "Show the VM's IP and ping apple.com from inside the VM") { runner.checkInternet() }
+                }
+            }
+            Section("Device") {
+                action("Hold Power (3s)", help: "Long-press power, e.g. for the power-off slider") { runner.press(.power, holdMilliseconds: 3000) }
+                if vm.jailbroken {
+                    action("Reboot iOS", help: "Reboot from inside the VM") { runner.sendToSerial("reboot") }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .disabled(!runner.isRunning)
+        .overlay { if !runner.isRunning { Text("Start the VM to use these.").foregroundStyle(.secondary) } }
+    }
+
+    /// A row that runs an action and jumps to the Terminal so the output is visible.
+    private func action(_ title: String, help: String, _ perform: @escaping () -> Void) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(title)
+                Text(help).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Run") { perform(); tab = .terminal }
+        }
     }
 
     private var statusText: String {
