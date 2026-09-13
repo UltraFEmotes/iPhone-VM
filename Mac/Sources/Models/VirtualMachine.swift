@@ -40,11 +40,22 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
     func file(_ name: String) -> URL { folder.appendingPathComponent(name) }
 }
 
-/// Paths to the existing Mac Inferno setup this app drives.
+/// Paths to the Inferno setup this app drives: the original ~/Documents/iphone/InfernoData when it exists,
+/// otherwise the app's own folder, which the first-run setup (install_mac.sh) fills.
 enum InfernoPaths {
-    static let dataRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Documents/iphone/InfernoData", isDirectory: true)
+    static let dataRoot: URL = {
+        let legacy = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents/iphone/InfernoData", isDirectory: true)
+        if FileManager.default.fileExists(atPath: legacy.appendingPathComponent("Inferno").path) { return legacy }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("InfernoMac/InfernoData", isDirectory: true)
+    }()
     static let qemu = dataRoot.appendingPathComponent("Inferno/build/qemu-system-aarch64")
+
+    /// True once install_mac.sh (or a manual setup) has produced the emulator and the companion VM.
+    static var isInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: qemu.path) && FileManager.default.fileExists(atPath: startCompanion.path)
+    }
 
     /// Engine build matching the entry's SEP version: iOS 14 uses the main build, 15–18 use build-sepN.
     static func qemu(forSEP version: Int?) -> URL {

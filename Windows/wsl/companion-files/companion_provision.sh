@@ -11,7 +11,12 @@ F=/mnt/host/companion-files
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git autoconf automake libtool pkg-config \
     libssl-dev libusb-1.0-0-dev libcurl4-openssl-dev libreadline-dev libzip-dev zlib1g-dev python3-dev cython3 udev \
-    dnsmasq iptables cmake python3 xz-utils linux-headers-amd64 apfs-dkms
+    dnsmasq iptables cmake python3 xz-utils
+# Windows patches the iPhone disk inside the companion with the Linux APFS driver; macOS does it natively
+# (InfernoMac passes INFERNO_SKIP_APFS=1). Headers match the companion's own architecture.
+if [ "${INFERNO_SKIP_APFS:-0}" != 1 ]; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-headers-$(dpkg --print-architecture)" apfs-dkms
+fi
 
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig/
 mkdir -p ~/src && cd ~/src
@@ -30,7 +35,7 @@ getent passwd usbmux >/dev/null || {
 }
 
 # InfernoFSPatcher (dyld shared cache patch). It builds with -Werror; retry without it if GCC warns.
-if [ ! -x /opt/InfernoFSPatcher/build/inferno_fs_patcher ]; then
+if [ "${INFERNO_SKIP_APFS:-0}" != 1 ] && [ ! -x /opt/InfernoFSPatcher/build/inferno_fs_patcher ]; then
     sudo rm -rf /opt/InfernoFSPatcher
     sudo git clone --depth 1 https://git.chefkiss.dev/AppleHax/InfernoFSPatcher /opt/InfernoFSPatcher
     cd /opt/InfernoFSPatcher

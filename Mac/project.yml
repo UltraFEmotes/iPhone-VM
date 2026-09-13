@@ -26,6 +26,13 @@ targets:
       - path: Sources
       - path: Resources
         buildPhase: resources
+      # Shared with the Windows app: companion VM setup files and the ticket/restore tools.
+      - path: ../Windows/wsl/companion-files
+        type: folder
+        buildPhase: resources
+      - path: ../Windows/wsl/tools
+        type: folder
+        buildPhase: resources
     info:
       path: Sources/Info.plist
       properties:

@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var registry: RunnerRegistry
     @State private var selection: VirtualMachine.ID?
     @State private var showingWizard = false
+    @State private var showingEnvironmentSetup = false
 
     var body: some View {
         NavigationSplitView {
@@ -26,7 +27,11 @@ struct ContentView: View {
                 }
             }
             .toolbar {
-                Button { showingWizard = true } label: { Label("New VM", systemImage: "plus") }
+                Button {
+                    if InfernoPaths.isInstalled { showingWizard = true } else { showingEnvironmentSetup = true }
+                } label: { Label("New VM", systemImage: "plus") }
+                Button { showingEnvironmentSetup = true } label: { Label("Set Up Inferno", systemImage: "wrench.and.screwdriver") }
+                    .help("Build or repair the Inferno emulator and companion VM")
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 250)
         } detail: {
@@ -40,6 +45,10 @@ struct ContentView: View {
         .sheet(isPresented: $showingWizard) {
             NewVMWizard { vm in selection = vm.id }
         }
+        .sheet(isPresented: $showingEnvironmentSetup) {
+            EnvironmentSetupView()
+        }
+        .task { if !InfernoPaths.isInstalled { showingEnvironmentSetup = true } }
     }
 
     private func subtitle(for vm: VirtualMachine) -> String {
