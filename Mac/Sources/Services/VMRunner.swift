@@ -36,13 +36,17 @@ final class VMRunner: ObservableObject {
         }
         var args = [
             "-M", machine + identity,
+            // Multi-threaded TCG spreads the emulated cores over host threads (the guest CPU is emulated;
+            // Inferno's Apple SoC can't use HVF). tb-size is kept modest to avoid adding host memory pressure.
+            "-accel", "tcg,thread=multi,tb-size=256",
             "-kernel", f("kernelcache"),
             "-dtb", f("devicetree.im4p"),
             "-append", entry.bootArgs + (vm.jailbroken ? " launchd_unsecure_cache=1" : ""),
             "-smp", "\(entry.cpus)", "-m", entry.memory,
             "-serial", "stdio", "-monitor", "none",
             "-qmp", "unix:\(qmpSocket.path),server=on,wait=off",
-            "-display", "cocoa,zoom-to-fit=on,zoom-interpolation=on,show-cursor=on",
+            // zoom-interpolation is a per-frame host scaling cost; drop it (scaling stays, just not smoothed).
+            "-display", "cocoa,zoom-to-fit=on,show-cursor=on",
         ]
         if !simulatedSEP {
             // SEP storage flash (t8030); the s8000 simulated SEP has no pflash.
