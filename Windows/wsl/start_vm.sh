@@ -2,6 +2,10 @@
 # Boots one Inferno iPhone VM (same layout as InfernoMac's VMRunner). The phone screen opens as a GTK
 # window, which WSLg shows on the Windows desktop; the serial console is this script's stdin/stdout.
 # Usage: start_vm.sh <vm-folder> <entry.json> <jailbreak 0|1> <qmp-port, 0 = none> [restore]
+#
+# The web server (headless hosting) overrides the display and serial with env vars:
+#   INFERNO_DISPLAY=vnc=127.0.0.1:<disp>   phone screen on that VNC display instead of a GTK window
+#   INFERNO_SERIAL=tcp:127.0.0.1:<port>    serial console on a TCP socket instead of stdin/stdout
 set -uo pipefail
 source "$(dirname "$0")/common.sh"
 VM="${1%/}"; ENTRY="$2"; JB="${3:-0}"; QMP="${4:-0}"; MODE="${5:-normal}"
@@ -20,10 +24,22 @@ bootargs="$(e bootArgs)"
 [ "$JB" = 1 ] && bootargs+=" launchd_unsecure_cache=1"
 
 args=(-M "$machine" -kernel "$(f kernelcache)" -dtb "$(f devicetree.im4p)" -append "$bootargs"
-      -smp "$(e cpus)" -m "$(e memory)" -serial stdio -monitor none)
+      -smp "$(e cpus)" -m "$(e memory)" -monitor none)
+# Serial: a TCP socket for the web server, otherwise this script's stdin/stdout.
+case "${INFERNO_SERIAL:-stdio}" in
+    tcp:*) args+=(-serial "tcp:${INFERNO_SERIAL#tcp:},server=on,wait=off") ;;
+    *) args+=(-serial stdio) ;;
+esac
 [ "$QMP" != 0 ] && args+=(-qmp "tcp:127.0.0.1:$QMP,server=on,wait=off")
+# Display: a VNC display for the web server, a GTK window on a desktop, or none during restore.
 if [ "$MODE" = restore ]; then
     args+=(-display none -initrd "$(f ramdisk_erase.dmg)")
+elif [ -n "${INFERNO_DISPLAY:-}" ]; then
+    case "$INFERNO_DISPLAY" in
+        vnc=*) args+=(-vnc "${INFERNO_DISPLAY#vnc=}") ;;
+        none) args+=(-display none) ;;
+        *) args+=(-display "$INFERNO_DISPLAY") ;;
+    esac
 else
     args+=(-display gtk,zoom-to-fit=on,show-cursor=on)
 fi

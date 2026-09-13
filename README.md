@@ -69,6 +69,10 @@ Download **iphone-vm-linux.tar.gz** from [Releases](../../releases), or use `Lin
 Run `./iphone-vm help` for all commands (buttons, trust prompt, snapshots…). It uses the same backend scripts as
 InfernoWin.
 
+**Headless / hosting:** `./iphone-vm web 8080 --host 0.0.0.0 --token SECRET` serves a browser UI where you install,
+create, set up and run VMs, use the console and see the phone screen (noVNC: `sudo apt install novnc websockify`).
+Always set a token when binding to `0.0.0.0`. The CLI and web UI share the same VMs.
+
 ### Speed
 
 Inferno emulates the iPhone entirely in software on every platform (no hypervisor), so expect a slow phone on any
