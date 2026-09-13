@@ -51,9 +51,8 @@ final class VMRunner: ObservableObject {
             "-smp", "\(entry.cpus)", "-m", entry.memory,
             "-serial", "stdio", "-monitor", "none",
             "-qmp", "unix:\(qmpSocket.path),server=on,wait=off",
-            // zoom-interpolation is a per-frame host scaling cost; drop it (scaling stays, just not smoothed).
-            "-display", "cocoa,zoom-to-fit=on,show-cursor=on",
         ]
+        args += displayArguments()
         if !simulatedSEP {
             // SEP storage flash (t8030); the s8000 simulated SEP has no pflash.
             args += ["-drive", "file=\(f("sep_nvram")),if=pflash,format=raw",
@@ -78,6 +77,17 @@ final class VMRunner: ObservableObject {
             args += ["-initrd", f("ramdisk_erase.dmg")]
         }
         return args
+    }
+
+    private func displayArguments() -> [String] {
+        let mode = vm.effectiveGraphicsMode
+        // QEMU's Cocoa backend exposes framebuffer presentation options, not a Metal guest-GPU path.
+        // The non-framebuffer modes are saved as experimental choices and intentionally fall back here
+        // until the Inferno engine grows AGX emulation or a guest paravirtual graphics device.
+        switch mode {
+        case .softwareFramebuffer, .agxMetal, .paravirtualMetal:
+            return ["-display", "cocoa,zoom-to-fit=on,show-cursor=on"]
+        }
     }
 
     /// Boots the VM. The companion VM is started first if needed: it provides the emulated USB link
@@ -159,6 +169,9 @@ final class VMRunner: ObservableObject {
         }
         do {
             append("[starting \(entry.deviceName) \(entry.ios)]\n")
+            if !vm.effectiveGraphicsMode.isImplemented {
+                append("[experimental graphics '\(vm.effectiveGraphicsMode.title)' is not implemented in the engine yet; using Software Framebuffer]\n")
+            }
             try p.run()
             process = p
             stdinPipe = input

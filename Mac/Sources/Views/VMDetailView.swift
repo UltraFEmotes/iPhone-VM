@@ -125,21 +125,39 @@ struct VMDetailView: View {
     private var miscPane: some View {
         Form {
             Section("Internet") {
-                action("Send Trust Prompt", help: "Ask iOS to trust the companion (needed once for USB internet)") {
+                action("Send Trust Prompt", help: "Ask iOS to trust the companion (needed once for USB internet)", disabled: !runner.isRunning) {
                     Task { await runner.sendTrustPrompt() }
                 }
-                action("Restart Internet", help: "Restart usbmuxd, tethering and DHCP on the companion") {
+                action("Restart Internet", help: "Restart usbmuxd, tethering and DHCP on the companion", disabled: !runner.isRunning) {
                     Task { await runner.restartInternet() }
                 }
                 if vm.jailbroken {
-                    action("Test Internet", help: "Show the VM's IP and ping apple.com from inside the VM") { runner.checkInternet() }
+                    action("Test Internet", help: "Show the VM's IP and ping apple.com from inside the VM", disabled: !runner.isRunning) { runner.checkInternet() }
                 }
             }
             Section("Device") {
-                action("Hold Power (3s)", help: "Long-press power, e.g. for the power-off slider") { runner.press(.power, holdMilliseconds: 3000) }
+                action("Hold Power (3s)", help: "Long-press power, e.g. for the power-off slider", disabled: !runner.isRunning) { runner.press(.power, holdMilliseconds: 3000) }
                 if vm.jailbroken {
-                    action("Reboot iOS", help: "Reboot from inside the VM") { runner.sendToSerial("reboot") }
+                    action("Reboot iOS", help: "Reboot from inside the VM", disabled: !runner.isRunning) { runner.sendToSerial("reboot") }
                 }
+            }
+            Section("Experimental Graphics") {
+                Picker("Mode", selection: graphicsModeBinding) {
+                    ForEach(VirtualMachine.GraphicsMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Text(currentGraphicsMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !currentGraphicsMode.isImplemented {
+                    Text("This saves the experiment choice but falls back to Software Framebuffer until the emulator engine supports it.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                Text("Changes apply the next time this VM starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             if vm.jailbroken {
                 Section("Clipboard") {
@@ -147,6 +165,7 @@ struct VMDetailView: View {
                         get: { clipboard.isEnabled(for: vm.id) },
                         set: { clipboard.setEnabled($0, for: vm, runner: runner) }
                     ))
+                    .disabled(!runner.isRunning)
                     Text(clipboard.status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -154,8 +173,26 @@ struct VMDetailView: View {
             }
         }
         .formStyle(.grouped)
-        .disabled(!runner.isRunning)
-        .overlay { if !runner.isRunning { Text("Start the VM to use these.").foregroundStyle(.secondary) } }
+    }
+
+    private var currentVM: VirtualMachine {
+        store.machines.first(where: { $0.id == vm.id }) ?? vm
+    }
+
+    private var currentGraphicsMode: VirtualMachine.GraphicsMode {
+        currentVM.effectiveGraphicsMode
+    }
+
+    private var graphicsModeBinding: Binding<VirtualMachine.GraphicsMode> {
+        Binding(
+            get: { currentGraphicsMode },
+            set: { mode in
+                var updated = currentVM
+                updated.graphicsMode = mode == .softwareFramebuffer ? nil : mode
+                try? store.save(updated)
+                reloadRunnerIfStopped()
+            }
+        )
     }
 
     private func chooseIPA() {
@@ -168,7 +205,7 @@ struct VMDetailView: View {
     }
 
     /// A row that runs an action and jumps to the Terminal so the output is visible.
-    private func action(_ title: String, help: String, _ perform: @escaping () -> Void) -> some View {
+    private func action(_ title: String, help: String, disabled: Bool = false, _ perform: @escaping () -> Void) -> some View {
         HStack {
             VStack(alignment: .leading) {
                 Text(title)
@@ -176,6 +213,7 @@ struct VMDetailView: View {
             }
             Spacer()
             Button("Run") { perform(); tab = .terminal }
+                .disabled(disabled)
         }
     }
 

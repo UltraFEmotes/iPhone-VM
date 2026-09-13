@@ -6,6 +6,37 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
         case new, downloading, preparing, restoring, patching, ready, failed
     }
 
+    enum GraphicsMode: String, Codable, CaseIterable, Identifiable {
+        case softwareFramebuffer
+        case agxMetal
+        case paravirtualMetal
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .softwareFramebuffer: return "Software Framebuffer"
+            case .agxMetal: return "AGX -> Metal"
+            case .paravirtualMetal: return "Paravirtual Metal"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .softwareFramebuffer:
+                return "Current working path: iOS renders to the emulated display pipe, QEMU presents the framebuffer."
+            case .agxMetal:
+                return "Experimental placeholder: future Apple GPU command emulation translated to Metal."
+            case .paravirtualMetal:
+                return "Experimental placeholder: future guest bridge that bypasses the stock iOS graphics stack."
+            }
+        }
+
+        var isImplemented: Bool {
+            self == .softwareFramebuffer
+        }
+    }
+
     /// Device identity passed to Inferno's machine properties. Empty = Inferno's default.
     /// ECID is not editable here: the restore's boot ticket and SEP data are tied to it.
     struct PhoneIdentity: Codable, Hashable {
@@ -35,6 +66,9 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
     var state: SetupState
     var createdAt: Date
     var identity: PhoneIdentity? = nil
+    var graphicsMode: GraphicsMode? = nil
+
+    var effectiveGraphicsMode: GraphicsMode { graphicsMode ?? .softwareFramebuffer }
 
     var folder: URL { VMStore.vmsRoot.appendingPathComponent(id.uuidString, isDirectory: true) }
     func file(_ name: String) -> URL { folder.appendingPathComponent(name) }
