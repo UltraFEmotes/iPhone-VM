@@ -23,7 +23,9 @@ start)
         echo "note: /dev/kvm isn't available in this WSL — the companion runs without acceleration (slower)"
     fi
     extra=()
-    [ -n "${EXTRA_DRIVE:-}" ] && extra=(-drive "file=$EXTRA_DRIVE,format=raw,if=virtio")
+    # The iPhone disk uses 4096-byte sectors (Inferno's NVMe); with the default 512 Linux can't find its GPT.
+    [ -n "${EXTRA_DRIVE:-}" ] && extra=(-drive "file=$EXTRA_DRIVE,format=raw,if=none,id=iphone-root"
+                                        -device "virtio-blk-pci,drive=iphone-root,logical_block_size=4096,physical_block_size=4096")
     rm -f /tmp/InfernoUSBRemote
     "$QEMU_X86" -M q35 "${accel[@]}" -m 2G -smp 2 \
         -usb -device usb-ehci,id=ehci -device usb-tcp-remote,bus=ehci.0 \
