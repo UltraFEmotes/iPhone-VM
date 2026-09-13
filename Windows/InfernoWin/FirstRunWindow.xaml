@@ -7,8 +7,8 @@
             <TextBlock Text="InfernoWin runs the iPhone emulator inside WSL2 (Linux on Windows)." FontSize="15" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" Margin="0,6,0,12" Foreground="Gray">
                 One-time setup: install WSL2 with Ubuntu, then build the Inferno emulator and create the companion VM
-                inside it. Building takes 20–60 minutes and needs about 15 GB. The iPhone is emulated in software on
-                Windows, so it runs much slower than on an Apple Silicon Mac.
+                inside it. Building takes 20–60 minutes and needs about 15 GB. The iPhone is emulated in software
+                (on every platform), so expect it to be slow.
             </TextBlock>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                 <TextBlock Text="1." FontWeight="SemiBold" Width="20"/>
