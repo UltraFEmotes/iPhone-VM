@@ -12,10 +12,16 @@ settings:
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"
     ENABLE_HARDENED_RUNTIME: NO
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.2.0
 targets:
   InfernoMac:
     type: application
     platform: macOS
+    dependencies:
+      - package: SwiftTerm
     sources:
       - path: Sources
       - path: Resources

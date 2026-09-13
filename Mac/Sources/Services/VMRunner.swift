@@ -132,8 +132,12 @@ final class VMRunner: ObservableObject {
         p.standardInput = input
         out.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { return }
-            Task { @MainActor in self?.append(text) }
+            guard !data.isEmpty else { return }
+            let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+            Task { @MainActor in
+                self?.appendRaw(data)
+                if let text { self?.append(text) }
+            }
         }
         p.terminationHandler = { [weak self] proc in
             Task { @MainActor in
@@ -162,6 +166,34 @@ final class VMRunner: ObservableObject {
     /// Text typed in the Terminal tab goes to the guest's serial console (e.g. the jailbreak bash).
     func sendToSerial(_ line: String) {
         stdinPipe?.fileHandleForWriting.write(Data((line + "\n").utf8))
+    }
+
+    /// Raw keystrokes from the interactive console (arrows, Tab, Ctrl-C…), sent to the serial port as-is.
+    func sendRaw(_ bytes: Data) {
+        guard isRunning else { return }
+        stdinPipe?.fileHandleForWriting.write(bytes)
+    }
+
+    /// Raw serial output for the interactive console. Every chunk is passed on unmodified, so the
+    /// terminal sees escape sequences; `rawBacklog` replays recent output when a console opens.
+    private(set) var rawBacklog = Data()
+    private var rawListeners: [UUID: (Data) -> Void] = [:]
+    private let maxRawBacklog = 256_000
+
+    func addRawListener(_ listener: @escaping (Data) -> Void) -> UUID {
+        let id = UUID()
+        rawListeners[id] = listener
+        return id
+    }
+
+    func removeRawListener(_ id: UUID) {
+        rawListeners[id] = nil
+    }
+
+    private func appendRaw(_ data: Data) {
+        rawBacklog.append(data)
+        if rawBacklog.count > maxRawBacklog { rawBacklog = rawBacklog.suffix(maxRawBacklog / 2) }
+        rawListeners.values.forEach { $0(data) }
     }
 
     /// Writes a message into the Terminal log (used by the VM tab's buttons).

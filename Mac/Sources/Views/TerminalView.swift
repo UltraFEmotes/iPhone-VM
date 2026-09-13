@@ -6,6 +6,7 @@ struct TerminalView: View {
     @State private var input = ""
     @State private var autoScroll = true
     @State private var filter = ""
+    @State private var showLog = false
 
     private var shownLog: String {
         guard !filter.isEmpty else { return runner.log }
@@ -15,6 +16,30 @@ struct TerminalView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Picker("", selection: $showLog) {
+                    Text("Console").tag(false)
+                    Text("Log").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+                .help("Console: type straight into the VM's shell. Log: searchable history.")
+                if !showLog {
+                    Text(runner.isRunning ? "Click in the console and type — arrows, Tab and Ctrl-C work" : "Start the VM to use the console")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            .padding(8)
+            if showLog { logView } else {
+                SerialConsoleView(runner: runner)
+                    .background(Color.black)
+            }
+        }
+    }
+
+    private var logView: some View {
         VStack(spacing: 0) {
             HStack {
                 TextField("Filter", text: $filter).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
