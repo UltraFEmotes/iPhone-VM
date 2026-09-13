@@ -305,3 +305,6 @@ A modem boot also needs `/System/Library/Caches/com.apple.factorydata` (created 
 - Release v0.1.0-experimental (pre-release): InfernoMac-macOS-arm64.zip, InfernoWin-win-x64.zip, InfernoNativeTest.zip.
 - To update it: re-copy the files (same exclusions), check for personal data, commit there, push, and add a release.
 - install_mac.sh (first-run Mac setup) has NOT been run end-to-end on a clean Mac yet.
+- 2026-09-13: added `Linux/iphone-vm` (command-line version on the same bash backend as InfernoWin), release v0.2.0-experimental.
+  Tested on Debian arm64 (in the Mac companion) up to setup; install/setup/start not yet run end-to-end on Linux.
+  The iPhone VM is software-emulated (TCG) on every platform. Inferno has no hypervisor support for t8030/s8000.
