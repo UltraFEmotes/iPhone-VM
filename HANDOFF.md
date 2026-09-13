@@ -280,6 +280,15 @@ send-notification-to-VM, custom phone info (serial etc.), multi-VM.
   macOS `fsck_apfs -n` always reports keybag errors on iOS containers — not a useful corruption check.
 - Only iOS 14.0b5 has an engine; other SEP versions need `build-sepNN` (not scripted for Linux).
 
+## iOS 18 status (2026-09-13)
+- **18.0 (22A3354) doesn't restore**: the ramdisk aborts on "multi-touch update failed with code 0x1"
+  (`update_aht_block_invoke`, idevicerestore log in the companion's home). Removed from the manifest.
+- **18.5 (22F76) replaces it**, still experimental. Inferno's developer: "only iOS 18.5 booting" and it
+  "still has many issues" (ChefKissInc/Inferno#241); iOS 17+ also hit the SPRR bug (#216, open).
+  SEP keys came from The Apple Wiki API (`api.php?...prop=revisions`); the raw page is behind a bot check.
+- iOS 16+ IPSWs ship the OS as `.dmg.aea` (6.4 GB for 18.5); the precache now handles it. The companion
+  disk was grown to 24 GB for this (qemu-img resize +16G; cloud-init grew the partition on boot).
+
 ## Carrier (simulated, Messages app)
 Real baseband: iOS loads the Intel modem driver on `build-bb` but stops after one BAR1 read — not
 feasible. Simulated instead: `MessagesDelivery` inserts into `sms.db` over the serial root shell.
