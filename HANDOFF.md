@@ -323,3 +323,19 @@ Custom-number texts appear in the VM's REAL Messages app, both ways, live (no re
   (restarting imagent too duplicates msgs); 'poll <since>' reads replies as ROWID:hex(to):hex(text).
 - App wired (commit 7e9d055): MessagesDelivery over serial; Set Up Carrier installs via apt; console polls replies.
 - TODO: incoming calls (needs CallKit/TU injection, not a DB row); dedupe verified via IMDPersistenceAgent-only refresh.
+
+## 2026-09-14 improvements + guest-tools feasibility
+Perf: app now passes -accel tcg,thread=multi,tb-size=256 and -display cocoa,zoom-to-fit (no interpolation);
+companion RAM 2G->1G. Guest CPU is TCG-only (no HVF path in hw/arm/apple-silicon). Biggest real slowdown was
+the host swapping (Discord/Brave/Xcode); free RAM before blaming the VM.
+Carrier: reply-poller backs off 8s after Terminal keystrokes + a Live toggle (was colliding with typed cmds).
+
+Guest Tools reality (iOS is closed — no 3rd-party drivers, unlike normal VM guest additions):
+- GPU accel: NOT possible (AGX not emulated; framebuffer only).
+- Audio: Inferno HAS aop-audio.c/cs42l77.c/mca.c but they're COMMENTED OUT in t8030.c (~line 2447, TODO ~2641).
+  Enabling = finishing the emulator's C device + a coreaudio backend; real qemu dev spike, uncertain.
+- Keyboard passthrough: feasible via a jailbreak IOHIDEvent-injection agent (needs HID entitlements; untested).
+- Clipboard sync: feasible via a jailbreak agent syncing UIPasteboard over the companion net (untested).
+- Right architecture for keyboard/clipboard/carrier: one compiled 'guest agent' daemon talking to the companion
+  broker over NSURLSession (no curl), installed as a LaunchDaemon so it persists across reboots.
+All four need a stable running VM + free host RAM to develop against (currently blocked).
