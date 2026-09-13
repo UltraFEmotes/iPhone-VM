@@ -296,3 +296,12 @@ iOS's sandbox refuses the SMS folder even to root, so a sqlite3 re-signed on the
 `com.apple.private.security.storage.SMS` (in `InfernoData/carrier/`, served by the companion on
 `192.168.178.1:8088`) is installed by the Jailbreak tab's **Set Up Carrier**. Waiting on its first run.
 A modem boot also needs `/System/Library/Caches/com.apple.factorydata` (created on the current VM).
+
+---
+
+## Published: https://github.com/UltraFEmotes/iPhone-VM (public, 2026-09-13)
+- A clean copy of this repo: HANDOFF.md, docs/ and scripts/ are left out (device UDID, pairing notes). It has one fresh
+  commit under the GitHub noreply address. The owner chose to keep the SEP keys in the manifest.
+- Release v0.1.0-experimental (pre-release): InfernoMac-macOS-arm64.zip, InfernoWin-win-x64.zip, InfernoNativeTest.zip.
+- To update it: re-copy the files (same exclusions), check for personal data, commit there, push, and add a release.
+- install_mac.sh (first-run Mac setup) has NOT been run end-to-end on a clean Mac yet.
