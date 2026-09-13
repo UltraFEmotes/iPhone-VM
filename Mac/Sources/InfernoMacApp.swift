@@ -13,6 +13,7 @@ struct InfernoMacApp: App {
                 .environmentObject(registry)
                 .environmentObject(carrier)
                 .frame(minWidth: 820, minHeight: 520)
+                .task { carrier.delivery = MessagesDelivery(registry: registry, store: store) }
         }
 
         Window("Carrier", id: "carrier") {

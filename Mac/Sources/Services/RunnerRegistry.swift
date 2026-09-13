@@ -34,6 +34,12 @@ final class RunnerRegistry: ObservableObject {
 
     func isRunning(_ id: UUID) -> Bool { runners[id]?.isRunning ?? false }
 
+    /// The running VM with this id, if any (used by the carrier to reach the VM's serial shell).
+    func runningRunner(_ id: UUID) -> VMRunner? {
+        guard let runner = runners[id], runner.isRunning else { return nil }
+        return runner
+    }
+
     func stopAll() {
         runners.values.forEach { $0.stop() }
     }
