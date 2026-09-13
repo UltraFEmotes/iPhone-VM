@@ -19,9 +19,9 @@ What your PC needs
 
 Speed: please read
 ------------------
-On an Apple Silicon Mac the iPhone runs almost natively. On an Intel/AMD PC every iPhone instruction
-has to be translated in software, so it is MUCH slower: booting can take many minutes and the home
-screen will be sluggish. That's expected, not a bug.
+Inferno emulates the iPhone entirely in software on every platform, Macs included, so booting can take
+many minutes and the home screen will be sluggish. That's expected, not a bug. Only the small helper VM
+uses hardware acceleration. How fast it is on your PC hasn't been measured yet, so please share yours.
 
 
 First run

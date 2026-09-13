@@ -46,6 +46,30 @@ mkdir -p Inferno/build
 )
 [ -x "$QEMU_ARM" ] && [ -x "$QEMU_X86" ] || fail "Inferno build did not produce the emulators"
 
+# Optional: one emulator per Secure Enclave version, for the experimental iOS 15-18 entries.
+if [ "${1:-}" = "--all-engines" ]; then
+    python3 - <<'EOF'
+p = "Inferno/hw/arm/apple-silicon/sep.c"
+s = open(p).read()
+if "#ifndef SEP_USE_VERSION_OVERRIDE" not in s:
+    old = "#define SEP_USE_VERSION_OVERRIDE 14\n"
+    assert old in s, "sep.c changed upstream; the per-iOS engines can't be built"
+    open(p, "w").write(s.replace(old, "#ifndef SEP_USE_VERSION_OVERRIDE\n" + old + "#endif\n", 1))
+EOF
+    for N in 15 16 17 18; do
+        step "inferno-ios$N"
+        mkdir -p "Inferno/build-sep$N"
+        (
+            cd "Inferno/build-sep$N"
+            [ -f build.ninja ] || ../configure --target-list=aarch64-softmmu,x86_64-softmmu \
+                --enable-lzfse --enable-slirp --enable-curses --enable-libssh --enable-virtfs --enable-zstd \
+                --enable-nettle --enable-gnutls --enable-gtk --enable-sdl --extra-cflags="-DSEP_USE_VERSION_OVERRIDE=$N" \
+                --disable-werror --disable-qom-cast-debug --disable-debug-info
+            ninja
+        ) || fail "building the iOS $N emulator failed"
+    done
+fi
+
 step tools
 [ -d img4lib ] || git clone --depth 1 https://github.com/xerub/img4lib
 (cd img4lib && make -j"$(nproc)" >/dev/null) || fail "img4lib did not build"
@@ -58,9 +82,10 @@ rm -rf "$DATA/companion-files" && cp -r "$SCRIPTS/companion-files" "$DATA/compan
 step companion-image
 [ -f companion_key ] || ssh-keygen -t ed25519 -N "" -f companion_key -q
 if [ ! -f companion.qcow2 ]; then
-    # Full-kernel Debian image: it has the 9p driver and matching headers for the APFS module.
+    # Full-kernel Debian image (9p driver + headers for the APFS module), matching the host's CPU.
+    ARCH=amd64; [ "$(uname -m)" = aarch64 ] && ARCH=arm64
     curl -L -f -o companion-download.qcow2 \
-        https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2
+        "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-$ARCH.qcow2"
     mv companion-download.qcow2 companion.qcow2
     "$QEMU_IMG" resize companion.qcow2 20G >/dev/null
 fi

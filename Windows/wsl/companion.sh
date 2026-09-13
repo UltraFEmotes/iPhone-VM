@@ -16,18 +16,24 @@ start)
         for _ in $(seq 60); do ssh_up && { echo "companion already running"; exit 0; }; sleep 3; done
         fail "companion is running but not answering ssh"
     fi
+    # The companion matches the host's CPU so KVM can accelerate it: x86_64 (q35) or arm64 (virt + UEFI).
+    if [ "$(uname -m)" = aarch64 ]; then
+        machine=("$QEMU_ARM" -M virt -bios "$ENGINE_DIR/pc-bios/edk2-aarch64-code.fd")
+    else
+        machine=("$QEMU_X86" -M q35)
+    fi
     if [ -w /dev/kvm ]; then
         accel=(-accel kvm -cpu host)
     else
         accel=(-accel tcg -cpu max)
-        echo "note: /dev/kvm isn't available in this WSL — the companion runs without acceleration (slower)"
+        echo "note: /dev/kvm isn't available — the companion runs without acceleration (slower)"
     fi
     extra=()
     # The iPhone disk uses 4096-byte sectors (Inferno's NVMe); with the default 512 Linux can't find its GPT.
     [ -n "${EXTRA_DRIVE:-}" ] && extra=(-drive "file=$EXTRA_DRIVE,format=raw,if=none,id=iphone-root"
                                         -device "virtio-blk-pci,drive=iphone-root,logical_block_size=4096,physical_block_size=4096")
     rm -f /tmp/InfernoUSBRemote
-    "$QEMU_X86" -M q35 "${accel[@]}" -m 2G -smp 2 \
+    "${machine[@]}" "${accel[@]}" -m 2G -smp 2 \
         -usb -device usb-ehci,id=ehci -device usb-tcp-remote,bus=ehci.0 \
         -drive file=companion.qcow2,if=virtio,discard=unmap -drive file=seed.iso,if=virtio,media=cdrom \
         "${extra[@]}" \

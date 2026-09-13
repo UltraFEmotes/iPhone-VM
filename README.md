@@ -17,6 +17,7 @@ All the hard emulation work is theirs. This project automates the setup their
 |---|---|---|
 | **InfernoMac** (`Mac/`) | macOS on Apple Silicon | Works on the author's Mac with iPhone 11 / iOS 14.0 beta 5 |
 | **InfernoWin** (`Windows/InfernoWin`, `Windows/wsl`) | Windows 10/11 with WSL2 | Builds; never run on Windows |
+| **iphone-vm** (`Linux/`) | Linux (Debian/Ubuntu, x86_64 or arm64) | Command-line tool; tested on Debian, full install not yet run |
 | **Native Windows build** (`Windows/ci`) | Windows without WSL | Inferno compiles for Windows (MSYS2); only a smoke test so far |
 
 ## Features (InfernoMac)
@@ -53,7 +54,26 @@ All the hard emulation work is theirs. This project automates the setup their
 ### Windows
 
 Download **InfernoWin** from [Releases](../../releases) and follow the `README.txt` inside. It needs WSL2 with Ubuntu.
-The phone runs in software emulation on Intel/AMD PCs, so it is much slower than on a Mac.
+
+### Linux
+
+Download **iphone-vm-linux.tar.gz** from [Releases](../../releases), or use `Linux/iphone-vm` from a clone:
+
+```
+./iphone-vm install        # builds Inferno + the companion VM (asks for sudo)
+./iphone-vm new iPhone12,1-18A5351d --jailbreak
+./iphone-vm setup <id>     # downloads iOS from Apple, restores, patches
+./iphone-vm start <id>
+```
+
+Run `./iphone-vm help` for all commands (buttons, trust prompt, snapshots…). It uses the same backend scripts as
+InfernoWin.
+
+### Speed
+
+Inferno emulates the iPhone entirely in software on every platform (no hypervisor), so expect a slow phone on any
+machine. Only the companion VM uses hardware acceleration (Apple's Hypervisor on the Mac, KVM on Linux, WSL2 on
+Windows). How a PC compares to an Apple Silicon Mac hasn't been measured yet.
 
 ## Build from source
 

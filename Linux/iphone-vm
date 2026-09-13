@@ -1,0 +1,244 @@
+#!/bin/bash
+# iphone-vm: command-line front end for ChefKiss Inferno on Linux (also works inside WSL2).
+# It drives the same backend scripts as InfernoWin: install.sh, setup_vm.sh, start_vm.sh and companion.sh.
+set -uo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# Release tarball: ./backend + ./manifest.json. Repo checkout: ../Windows/wsl + ../Mac/Resources/manifest.json.
+if [ -f "$HERE/backend/common.sh" ]; then BACKEND="$HERE/backend"; else BACKEND="$HERE/../Windows/wsl"; fi
+MANIFEST="$HERE/manifest.json"; [ -f "$MANIFEST" ] || MANIFEST="$HERE/../Mac/Resources/manifest.json"
+export INFERNO_DATA="${INFERNO_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/iphone-vm}"
+source "$BACKEND/common.sh"
+VMS="$DATA/VMs"
+STATE_FILES="root firmware syscfg ctrl_bits nvram effaceable panic_log sep_nvram sep_ssc"
+
+usage() {
+    cat <<EOF
+iphone-vm: an emulated iPhone on Linux, powered by ChefKiss Inferno (experimental)
+
+  iphone-vm install [--all-engines]        one-time setup: build Inferno and the companion VM
+                                           (--all-engines also builds the iOS 15-18 emulators)
+  iphone-vm versions [--all]               devices and iOS versions you can create (--all: experimental too)
+  iphone-vm new <version-id> [--name NAME] [--jailbreak]
+  iphone-vm list                           your VMs
+  iphone-vm setup <vm>                     download, restore and patch iOS (resumes if interrupted)
+  iphone-vm start <vm>                     boot it; this terminal becomes the phone's serial console
+  iphone-vm stop <vm>
+  iphone-vm press <vm> power|home|volup|voldown|ringer [hold-ms]
+  iphone-vm trust <vm>                     show the "Trust This Computer?" prompt (needed once for internet)
+  iphone-vm snapshot <vm> save|restore|delete <name>  |  snapshot <vm> list
+  iphone-vm companion start|stop|status
+  iphone-vm delete <vm> [--yes]
+
+<vm> is a VM's name or the start of its ID. Data lives in $DATA
+EOF
+}
+
+die() { echo "iphone-vm: $*" >&2; exit 1; }
+
+# JSON helpers (python3 is installed by 'install').
+jget() { json "$1" "$2"; }
+jset() {  # jset <file> <key> <json-value>
+    python3 - "$1" "$2" "$3" <<'EOF'
+import json, sys
+path, key, value = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+d = json.load(open(path)); d[key] = value
+json.dump(d, open(path, "w"), indent=2)
+EOF
+}
+
+# resolve_vm <name-or-id-prefix>: prints the VM folder.
+resolve_vm() {
+    [ -n "${1:-}" ] || die "which VM? (see: iphone-vm list)"
+    python3 - "$VMS" "$1" <<'EOF'
+import json, os, sys
+root, q = sys.argv[1], sys.argv[2].lower()
+hits = []
+for d in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+    try: v = json.load(open(os.path.join(root, d, "vm.json")))
+    except Exception: continue
+    if d.lower().startswith(q) or v.get("name", "").lower() == q:
+        hits.append(os.path.join(root, d))
+if len(hits) != 1:
+    sys.exit(f"iphone-vm: {'no VM matches' if not hits else 'several VMs match'} '{sys.argv[2]}'")
+print(hits[0])
+EOF
+}
+
+running_pid() { pgrep -f "file=$1/root,format=raw" | head -1; }
+
+qmp() {  # qmp <port> <command-json>
+    python3 - "$1" "$2" <<'EOF'
+import socket, sys, time
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=5)
+s.recv(4096)
+s.sendall(b'{"execute":"qmp_capabilities"}\n' + sys.argv[2].encode() + b"\n")
+time.sleep(0.4); s.close()
+EOF
+}
+
+cmd_versions() {
+    python3 - "$MANIFEST" "${1:-}" <<'EOF'
+import json, sys
+show_all = sys.argv[2] == "--all"
+print(f"{'VERSION ID':24} {'DEVICE':16} {'iOS':12} {'STATUS':13} JAILBREAK")
+for e in json.load(open(sys.argv[1]))["entries"]:
+    if e["status"] != "tested" and not show_all: continue
+    jb = "yes" if e.get("jailbreak", {}).get("bootstrap") else "-"
+    print(f"{e['id']:24} {e['deviceName']:16} {e['ios']:12} {e['status']:13} {jb}")
+if not show_all: print("\n(experimental versions: iphone-vm versions --all)")
+EOF
+}
+
+cmd_new() {
+    local id="${1:-}"; shift || true
+    [ -n "$id" ] || die "usage: iphone-vm new <version-id> [--name NAME] [--jailbreak]"
+    local name="" jb=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --name) name="${2:-}"; shift 2 ;;
+            --jailbreak) jb=true; shift ;;
+            *) die "unknown option $1" ;;
+        esac
+    done
+    mkdir -p "$VMS"
+    python3 - "$MANIFEST" "$VMS" "$id" "$name" "$jb" <<'EOF'
+import json, os, sys, uuid
+manifest, root, eid, name, jb = sys.argv[1:6]
+entry = next((e for e in json.load(open(manifest))["entries"] if e["id"] == eid), None)
+if not entry: sys.exit(f"iphone-vm: unknown version '{eid}' (see: iphone-vm versions --all)")
+jb = jb == "true"
+if jb and not entry.get("jailbreak", {}).get("bootstrap"):
+    sys.exit(f"iphone-vm: iOS {entry['ios']} can't be jailbroken (the bootstrap supports iOS 12-14)")
+vid = str(uuid.uuid4()).upper()
+used = []
+for d in os.listdir(root):
+    try: used.append(json.load(open(os.path.join(root, d, "vm.json"))).get("qmpPort", 0))
+    except Exception: pass
+port = next(p for p in range(4450, 4550) if p not in used)
+folder = os.path.join(root, vid); os.makedirs(folder)
+json.dump(entry, open(os.path.join(folder, "entry.json"), "w"), indent=2)
+vm = {"id": vid, "name": name or f"{entry['deviceName']} (iOS {entry['ios']})" + (" JB" if jb else ""),
+      "entryID": eid, "jailbroken": jb, "qmpPort": port, "state": "new"}
+json.dump(vm, open(os.path.join(folder, "vm.json"), "w"), indent=2)
+print(f"created {vm['name']}  ({vid[:8]})")
+print(f"next: iphone-vm setup {vid[:8]}")
+EOF
+}
+
+cmd_list() {
+    [ -d "$VMS" ] && [ -n "$(ls -A "$VMS" 2>/dev/null)" ] || { echo "no VMs yet (iphone-vm new ...)"; return; }
+    printf "%-9s %-32s %-12s %s\n" ID NAME iOS STATE
+    for f in "$VMS"/*/; do
+        f="${f%/}"; [ -f "$f/vm.json" ] || continue
+        local state; state=$(jget "$f/vm.json" state)
+        [ -n "$(running_pid "$f")" ] && state="running"
+        printf "%-9s %-32s %-12s %s\n" "$(basename "$f" | cut -c1-8)" "$(jget "$f/vm.json" name | cut -c1-32)" \
+            "$(jget "$f/entry.json" ios)" "$state"
+    done
+}
+
+cmd_setup() {
+    local vm; vm=$(resolve_vm "${1:-}") || exit 1
+    local jb=0; [ "$(jget "$vm/vm.json" jailbroken)" = true ] && jb=1
+    jset "$vm/vm.json" state '"setting up"'
+    "$BACKEND/setup_vm.sh" "$vm" "$vm/entry.json" "$jb" 2>&1 | tee -a "$vm/setup.log"
+    if grep -qx DONE <(tail -3 "$vm/setup.log"); then
+        jset "$vm/vm.json" state '"ready"'
+        echo "ready: iphone-vm start $(basename "$vm" | cut -c1-8)"
+    else
+        jset "$vm/vm.json" state '"failed"'
+        die "setup stopped; run it again to resume (log: $vm/setup.log)"
+    fi
+}
+
+cmd_start() {
+    local vm; vm=$(resolve_vm "${1:-}") || exit 1
+    [ "$(jget "$vm/vm.json" state)" = ready ] || die "finish setup first: iphone-vm setup $(basename "$vm" | cut -c1-8)"
+    [ -z "$(running_pid "$vm")" ] || die "already running"
+    "$BACKEND/companion.sh" start || echo "companion didn't start; booting without USB internet"
+    local jb=0; [ "$(jget "$vm/vm.json" jailbroken)" = true ] && jb=1
+    echo "[the phone screen opens in its own window; this terminal is the serial console. Ctrl-C stops the VM]"
+    exec "$BACKEND/start_vm.sh" "$vm" "$vm/entry.json" "$jb" "$(jget "$vm/vm.json" qmpPort)"
+}
+
+cmd_stop() {
+    local vm; vm=$(resolve_vm "${1:-}") || exit 1
+    [ -n "$(running_pid "$vm")" ] || die "not running"
+    qmp "$(jget "$vm/vm.json" qmpPort)" '{"execute":"quit"}' && echo "stopped"
+}
+
+cmd_press() {
+    local vm; vm=$(resolve_vm "${1:-}") || exit 1
+    local key
+    case "${2:-}" in
+        power) key=f5 ;; home) key=f6 ;; volup) key=f4 ;; voldown) key=f3 ;; ringer) key=f2 ;;
+        *) die "button must be power, home, volup, voldown or ringer" ;;
+    esac
+    [ -n "$(running_pid "$vm")" ] || die "not running"
+    qmp "$(jget "$vm/vm.json" qmpPort)" \
+        "{\"execute\":\"send-key\",\"arguments\":{\"keys\":[{\"type\":\"qcode\",\"data\":\"$key\"}],\"hold-time\":${3:-120}}}"
+}
+
+cmd_trust() {
+    resolve_vm "${1:-}" >/dev/null || exit 1
+    local out
+    out=$("${CSSH[@]}" 'sudo systemctl start usbmuxd; sleep 3; idevicepair pair 2>&1; idevicepair validate 2>&1')
+    case "$out" in
+        *SUCCESS*) echo "paired: USB internet should come up within a minute" ;;
+        *denied*) echo "iOS refused (Don't Trust was tapped). Stop and start the VM, then try again and tap Trust." ;;
+        *"Please accept"*) echo "prompt shown: tap Trust in the phone, then run 'iphone-vm trust' again" ;;
+        *) echo "$out" ;;
+    esac
+}
+
+cmd_snapshot() {
+    local vm; vm=$(resolve_vm "${1:-}") || exit 1
+    local action="${2:-list}" name="${3:-}"
+    local dir="$vm/snapshots"
+    case "$action" in
+        list) ls -1 "$dir" 2>/dev/null || echo "no snapshots" ;;
+        save|restore|delete)
+            [ -n "$name" ] || die "usage: iphone-vm snapshot <vm> $action <name>"
+            [ "$action" = delete ] || [ -z "$(running_pid "$vm")" ] || die "stop the VM first"
+            case "$action" in
+                save)
+                    [ -f "$vm/root" ] || die "nothing to save yet: run iphone-vm setup first"
+                    mkdir -p "$dir/$name"
+                    for f in $STATE_FILES; do [ -f "$vm/$f" ] && cp --reflink=auto --sparse=always "$vm/$f" "$dir/$name/"; done
+                    echo "saved snapshot '$name'" ;;
+                restore)
+                    [ -f "$dir/$name/root" ] || die "no snapshot '$name'"
+                    for f in $STATE_FILES; do [ -f "$dir/$name/$f" ] && cp --reflink=auto --sparse=always "$dir/$name/$f" "$vm/$f"; done
+                    echo "restored '$name'; start the VM to boot it" ;;
+                delete) rm -rf "${dir:?}/$name" && echo "deleted snapshot '$name'" ;;
+            esac ;;
+        *) die "snapshot actions: save, restore, delete, list" ;;
+    esac
+}
+
+cmd_delete() {
+    local vm; vm=$(resolve_vm "${1:-}") || exit 1
+    [ -z "$(running_pid "$vm")" ] || die "stop it first"
+    if [ "${2:-}" != "--yes" ]; then
+        read -r -p "Delete '$(jget "$vm/vm.json" name)' and its disks? [y/N] " a
+        [ "$a" = y ] || [ "$a" = Y ] || { echo "kept"; return; }
+    fi
+    rm -rf "${vm:?}" && echo "deleted"
+}
+
+case "${1:-help}" in
+    install) shift; exec "$BACKEND/install.sh" "$@" ;;
+    versions) shift; cmd_versions "$@" ;;
+    new) shift; cmd_new "$@" ;;
+    list|ls) cmd_list ;;
+    setup) shift; cmd_setup "$@" ;;
+    start) shift; cmd_start "$@" ;;
+    stop) shift; cmd_stop "$@" ;;
+    press) shift; cmd_press "$@" ;;
+    trust) shift; cmd_trust "$@" ;;
+    snapshot) shift; cmd_snapshot "$@" ;;
+    companion) shift; exec "$BACKEND/companion.sh" "$@" ;;
+    delete|rm) shift; cmd_delete "$@" ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 2 ;;
+esac
