@@ -12,6 +12,7 @@ struct VMDetailView: View {
     @EnvironmentObject private var registry: RunnerRegistry
     @State private var tab: Tab = .vm
     @State private var showingPhoneInfo = false
+    @State private var showingSnapshots = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +45,9 @@ struct VMDetailView: View {
         .navigationTitle(vm.name)
         .navigationSubtitle("\(entry.deviceName) · iOS \(entry.ios)")
         .toolbar {
+            Button { showingSnapshots = true } label: { Label("Save States", systemImage: "clock.arrow.circlepath") }
+                .help("Take or restore snapshots (VM must be stopped)")
+                .disabled(vm.state != .ready)
             // Serial/model/region properties exist only on the iPhone 11 (t8030) machine.
             if entry.machine == "t8030" {
                 Button { showingPhoneInfo = true } label: { Label("Phone Info", systemImage: "person.text.rectangle") }
@@ -52,6 +56,9 @@ struct VMDetailView: View {
         }
         .sheet(isPresented: $showingPhoneInfo, onDismiss: { reloadRunnerIfStopped() }) {
             PhoneInfoView(vm: vm)
+        }
+        .sheet(isPresented: $showingSnapshots) {
+            SnapshotsView(vm: vm, isRunning: runner.isRunning || runner.isStarting)
         }
     }
 
