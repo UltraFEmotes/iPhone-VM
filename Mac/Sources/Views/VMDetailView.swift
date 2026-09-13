@@ -100,6 +100,11 @@ struct VMDetailView: View {
                 action("Respring", help: "Restart SpringBoard (refreshes home screen icons)") { runner.sendToSerial("killall -9 SpringBoard") }
                 action("Refresh App Icons", help: "Run uicache for all apps") { runner.sendToSerial("uicache -a") }
             }
+            Section("Apps") {
+                action("Sideload IPA…", help: "Install any .ipa into /Applications (App Store apps must be decrypted to launch)") {
+                    chooseIPA()
+                }
+            }
             Section("Carrier (needs internet)") {
                 action("Set Up Carrier", help: "Installs the helper that puts Carrier Console texts into Messages") {
                     Task { await runner.setupCarrier() }
@@ -139,6 +144,15 @@ struct VMDetailView: View {
         .formStyle(.grouped)
         .disabled(!runner.isRunning)
         .overlay { if !runner.isRunning { Text("Start the VM to use these.").foregroundStyle(.secondary) } }
+    }
+
+    private func chooseIPA() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "ipa") ?? .data]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose an .ipa to install on the VM"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await runner.sideload(ipa: url) }
     }
 
     /// A row that runs an action and jumps to the Terminal so the output is visible.

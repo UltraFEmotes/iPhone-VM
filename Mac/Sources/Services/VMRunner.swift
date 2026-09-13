@@ -281,6 +281,75 @@ final class VMRunner: ObservableObject {
         note("carrier setup finished — log saved")
     }
 
+    /// Sideloads an .ipa into /Applications of a running jailbroken VM, the way jailbreak tools do:
+    /// unpacked and ad-hoc re-signed on the Mac, served by the companion (InfernoData/carrier/sideload),
+    /// pulled in over the serial root shell, then registered with uicache.
+    /// App Store IPAs are FairPlay-encrypted and won't launch until decrypted.
+    func sideload(ipa: URL) async {
+        note("sideloading \(ipa.lastPathComponent)…")
+        let fm = FileManager.default
+        let work = fm.temporaryDirectory.appendingPathComponent("sideload-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: work) }
+        do {
+            try fm.createDirectory(at: work, withIntermediateDirectories: true)
+            try await Shell.run("/usr/bin/ditto", ["-x", "-k", ipa.path, work.path])
+            let payload = work.appendingPathComponent("Payload", isDirectory: true)
+            guard let app = try fm.contentsOfDirectory(at: payload, includingPropertiesForKeys: nil)
+                .first(where: { $0.pathExtension == "app" }) else {
+                throw SetupError("no .app inside Payload/ — is this a real .ipa?")
+            }
+            if let executable = Self.executable(of: app),
+               let loadCommands = try? await Shell.run("/usr/bin/otool", ["-l", executable.path]),
+               loadCommands.contains("cryptid 1") {
+                note("warning: this app is App Store–encrypted (FairPlay); it will install but won't launch unless decrypted")
+            }
+            // Sign nested code first (deepest paths first), then the app itself.
+            let nested = (fm.enumerator(at: app, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+                .filter { ["dylib", "framework", "appex"].contains($0.pathExtension) }
+                .sorted { $0.path.count > $1.path.count }
+            for code in nested + [app] {
+                do {
+                    try await Shell.run("/usr/bin/codesign", ["-f", "-s", "-", "--preserve-metadata=entitlements", code.path])
+                } catch {
+                    note("couldn't re-sign \(code.lastPathComponent) (continuing): \(error.localizedDescription)")
+                }
+            }
+            let safeName = app.deletingPathExtension().lastPathComponent
+                .filter { $0.isLetter || $0.isNumber || "._-".contains($0) }
+            let shared = InfernoPaths.dataRoot.appendingPathComponent("carrier/sideload", isDirectory: true)
+            try fm.createDirectory(at: shared, withIntermediateDirectories: true)
+            let tarName = (safeName.isEmpty ? "app" : safeName) + ".tar"
+            let tar = shared.appendingPathComponent(tarName)
+            try? fm.removeItem(at: tar)
+            // COPYFILE_DISABLE keeps macOS's ._ metadata files out of the tarball.
+            try await Shell.run("/usr/bin/env", ["COPYFILE_DISABLE=1", "/usr/bin/tar", "-C", payload.path, "-cf", tar.path, app.lastPathComponent])
+
+            let served = await Companion.run("bash /mnt/host/carrier/serve.sh").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard served == "HTTP 200" else { throw SetupError("the companion couldn't serve the app (\(served))") }
+
+            let appDir = "/Applications/" + app.lastPathComponent
+            let quoted = "'" + appDir.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            [
+                "mount -uw /",
+                "mkdir -p /tmp/sideload && curl -s -o /tmp/sideload/app.tar http://192.168.178.1:8088/sideload/\(tarName) && echo SIDELOAD_DOWNLOADED",
+                "rm -rf \(quoted) && tar -xf /tmp/sideload/app.tar -C /Applications && rm -f /tmp/sideload/app.tar",
+                "chown -R root:wheel \(quoted) && chmod -R 755 \(quoted)",
+                "uicache -p \(quoted) && echo SIDELOAD_DONE",
+            ].forEach(sendToSerial)
+            note("\(app.lastPathComponent) sent to the VM — look for SIDELOAD_DONE below, then check the home screen")
+        } catch {
+            note("sideload failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// The main executable of an iOS .app bundle (from its Info.plist's CFBundleExecutable).
+    private static func executable(of app: URL) -> URL? {
+        guard let data = try? Data(contentsOf: app.appendingPathComponent("Info.plist")),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let name = plist["CFBundleExecutable"] as? String else { return nil }
+        return app.appendingPathComponent(name)
+    }
+
     /// Restarts the companion's tethering (DHCP/NAT) in case the VM lost internet.
     func restartInternet() async {
         note("restarting USB internet on the companion…")
