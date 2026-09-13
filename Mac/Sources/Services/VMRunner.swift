@@ -70,7 +70,51 @@ final class VMRunner: ObservableObject {
         return args
     }
 
+    /// Boots the VM. The companion VM is started first if needed: it provides the emulated USB link
+    /// (/tmp/InfernoUSBRemote) that gives the iPhone VM internet through reverse tethering.
     func start(restoreMode: Bool = false) {
+        guard !isRunning, !isStarting else { return }
+        isStarting = true
+        Task {
+            defer { isStarting = false }
+            if !restoreMode {
+                await ensureCompanion()
+            }
+            launch(restoreMode: restoreMode)
+        }
+    }
+
+    @Published private(set) var isStarting = false
+
+    private static func companionRunning() -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        p.arguments = ["-f", "qemu-system-aarch64 -M virt"]
+        p.standardOutput = Pipe()
+        try? p.run()
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    private func ensureCompanion() async {
+        if Self.companionRunning() { return }
+        append("[starting companion VM for USB internet]\n")
+        do {
+            try await Shell.run(InfernoPaths.startCompanion.path, [])
+        } catch {
+            append("[companion failed to start: \(error.localizedDescription) — booting without internet]\n")
+            return
+        }
+        // Wait for the companion's USB socket; the iPhone VM connects to it at boot.
+        for _ in 0..<60 {
+            if FileManager.default.fileExists(atPath: "/tmp/InfernoUSBRemote") { break }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000_000) // let Debian bring up usbmuxd/dnsmasq
+        append("[companion ready]\n")
+    }
+
+    private func launch(restoreMode: Bool) {
         guard !isRunning else { return }
         try? FileManager.default.removeItem(at: qmpSocket)
         let p = Process()
