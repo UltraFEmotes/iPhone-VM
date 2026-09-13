@@ -50,13 +50,18 @@ struct NewVMWizard: View {
                 Toggle("Show experimental versions", isOn: $showExperimental)
                     .help("Versions that haven't booted yet on this setup. They may fail during restore or boot.")
                 Toggle("Jailbroken", isOn: $jailbroken)
-                if jailbroken, let entry = selectedEntry {
+                    .disabled(!canJailbreak)
+                if let entry = selectedEntry, !entry.jailbreak.bootstrap {
+                    Text("Jailbreak isn't available for iOS \(entry.ios): the bootstrap only supports iOS 12–14.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if jailbroken, let entry = selectedEntry {
                     Text(jailbreakNote(entry)).font(.caption).foregroundStyle(.secondary)
                 }
 
                 TextField("Name", text: $name, prompt: Text(defaultName))
             }
             .onChange(of: deviceName) { _, _ in entryID = versions.first?.id }
+            .onChange(of: entryID) { _, _ in if !canJailbreak { jailbroken = false } }
 
             if let entry = selectedEntry {
                 Text("Downloads \(ByteCountFormatter.string(fromByteCount: entry.ipswSize, countStyle: .file)) of firmware from Apple and needs about 15 GB free.")
@@ -88,10 +93,14 @@ struct NewVMWizard: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Only versions whose manifest entry ships the (iOS 12–14) bootstrap can be jailbroken.
+    private var canJailbreak: Bool { selectedEntry?.jailbreak.bootstrap == true }
+
     private func create() {
         guard let entry = selectedEntry else { return }
         do {
-            let vm = try store.create(name: name.isEmpty ? defaultName : name, entry: entry, jailbroken: jailbroken)
+            let vm = try store.create(name: name.isEmpty ? defaultName : name, entry: entry,
+                                      jailbroken: jailbroken && entry.jailbreak.bootstrap)
             onCreate(vm)
             dismiss()
         } catch {
