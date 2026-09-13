@@ -185,17 +185,23 @@ final class VMRunner: ObservableObject {
     }
 
     /// Installs the Zebra package manager through the jailbreak's root shell on the serial console.
-    /// Needs the VM to have internet. Untested on this setup — output shows in the Terminal tab.
+    /// Needs the VM to have internet. The dpkg database starts empty (the bootstrap's copy is hidden
+    /// under the Data volume), so the debs are installed with dpkg --force-depends instead of apt.
     func installZebra() {
         note("installing Zebra (needs internet; watch the output below)")
         let commands = [
+            "mount -uw /",
+            "mkdir -p /var/lib/dpkg/info /var/lib/dpkg/updates /var/lib/apt/lists/partial /var/cache/apt/archives/partial",
+            "touch /var/lib/dpkg/status /var/lib/dpkg/available",
             "mkdir -p /etc/apt/sources.list.d",
             // Elucubratus (the checkra1n bootstrap's repo) for iOS 14 = CoreFoundation 1700
             "echo 'deb https://apt.bingner.com/ ios/1700.00 main' > /etc/apt/sources.list.d/bingner.list",
             "echo 'deb [trusted=yes] https://getzbra.com/repo/ ./' > /etc/apt/sources.list.d/zebra.list",
             "apt-get update",
-            "apt-get install -y --allow-unauthenticated uikittools xyz.willy.zebra",
-            "uicache -a || uicache -p /Applications/Zebra.app",
+            "cd /tmp && apt-get download --allow-unauthenticated xyz.willy.zebra uikittools",
+            "dpkg -i --force-depends --force-overwrite /tmp/*.deb",
+            "uicache -p /Applications/Zebra.app",
+            "killall -9 SpringBoard",
             "echo ZEBRA_INSTALL_DONE",
         ]
         for command in commands { sendToSerial(command) }
