@@ -89,7 +89,8 @@
         "bootstrap": false,
         "packageManager": null,
         "tweaks": "untested"
-      }
+      },
+      "note": "Restore not supported yet: iOS 16+ needs a Cryptex1 ticket this tool doesn't forge (idevicerestore stops at 'Unable to fetch Cryptex1 ticket')."
     },
     {
       "id": "iPhone12,1-21A329",
@@ -119,7 +120,8 @@
         "bootstrap": false,
         "packageManager": null,
         "tweaks": "untested"
-      }
+      },
+      "note": "Restore not supported yet: iOS 16+ needs a Cryptex1 ticket this tool doesn't forge (idevicerestore stops at 'Unable to fetch Cryptex1 ticket')."
     },
     {
       "id": "iPhone12,1-22F76",
@@ -130,7 +132,7 @@
       "ios": "18.5",
       "build": "22F76",
       "status": "experimental",
-      "note": "Replaces 18.0, whose restore fails flashing the multi-touch firmware; Inferno's developer reports only 18.5 boots on iOS 18 (issue #241), still with many issues.",
+      "note": "Restore not supported yet: iOS 16+ needs a Cryptex1 ticket this tool doesn't forge (idevicerestore stops at 'Unable to fetch Cryptex1 ticket').",
       "sepVersion": 18,
       "ipswURL": "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/082-45664/83E2B8CC-0CFA-4EE2-95E6-BA6037171BF4/iPhone12,1_18.5_22F76_Restore.ipsw",
       "ipswSize": 8514757815,

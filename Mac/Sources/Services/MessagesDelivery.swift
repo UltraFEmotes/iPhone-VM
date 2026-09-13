@@ -46,6 +46,51 @@ struct MessagesDelivery: CarrierDelivery {
         ]
     }
 
+    /// Reads texts the VM's user sent (Messages "is_from_me") since ROWID `since`, by running a query on the
+    /// serial console and parsing its output. Rows are emitted as `ROWID:HEX(handle):HEX(text)` between two
+    /// markers, so kernel log spam interleaved on the console can't corrupt them (hex has no odd characters).
+    func readReplies(vmID: UUID, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int) {
+        guard let runner = registry.runningRunner(vmID),
+              store.machines.first(where: { $0.id == vmID })?.jailbroken == true else { return ([], since) }
+        let db = "/var/mobile/Library/SMS/sms.db"
+        let query = "SELECT m.ROWID||':'||hex(h.id)||':'||hex(m.text) FROM message m " +
+            "JOIN handle h ON m.handle_id=h.ROWID WHERE m.is_from_me=1 AND m.ROWID>\(since) ORDER BY m.ROWID;"
+        let marker = UUID().uuidString.prefix(8)
+        runner.sendToSerial("echo CR_\(marker)_BEGIN; \(Self.sqliteTool) \(db) \"\(query)\" 2>/dev/null; echo CR_\(marker)_END")
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        return Self.parseReplies(runner.log, marker: String(marker), since: since)
+    }
+
+    /// Pulls the last `CR_<marker>_BEGIN … CR_<marker>_END` block out of the serial log and decodes its rows.
+    static func parseReplies(_ log: String, marker: String, since: Int) -> (messages: [(to: String, body: String)], lastRowID: Int) {
+        let lines = log.components(separatedBy: "\n")
+        guard let end = lines.lastIndex(of: "CR_\(marker)_END"),
+              let begin = lines[..<end].lastIndex(of: "CR_\(marker)_BEGIN") else { return ([], since) }
+        var messages: [(to: String, body: String)] = []
+        var maxRow = since
+        for raw in lines[(begin + 1)..<end] {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = line.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 3, let row = Int(parts[0]),
+                  parts[1].allSatisfy(\.isHexDigit), parts[2].allSatisfy(\.isHexDigit) else { continue }
+            maxRow = max(maxRow, row)
+            let to = decodeHex(String(parts[1])), body = decodeHex(String(parts[2]))
+            if !to.isEmpty { messages.append((to: to, body: body)) }
+        }
+        return (messages, maxRow)
+    }
+
+    private static func decodeHex(_ hex: String) -> String {
+        var bytes = [UInt8]()
+        let chars = Array(hex)
+        var i = 0
+        while i + 1 < chars.count {
+            if let b = UInt8(String(chars[i...i + 1]), radix: 16) { bytes.append(b) }
+            i += 2
+        }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
     private static func sql(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
     }

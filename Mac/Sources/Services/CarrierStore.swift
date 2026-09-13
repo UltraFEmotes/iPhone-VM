@@ -26,11 +26,15 @@ final class CarrierStore: ObservableObject {
     private struct Saved: Codable {
         var lines: [Line] = []
         var messages: [Message] = []
+        var lastReplyRowID: [String: Int] = [:]
     }
 
     @Published private(set) var lines: [Line] = []
     @Published private(set) var messages: [Message] = []
     var delivery: CarrierDelivery = LogOnlyDelivery()
+
+    /// Highest sms.db message ROWID already seen per VM, so a reply is turned into a text only once.
+    private var lastReplyRowID: [UUID: Int] = [:]
 
     static let adminNumber = "ADMIN"
     private let file: URL = VMStore.vmsRoot.deletingLastPathComponent().appendingPathComponent("carrier.json")
@@ -74,6 +78,35 @@ final class CarrierStore: ObservableObject {
         }
     }
 
+    /// Checks each numbered, running VM for texts the user typed in its Messages app and turns them into
+    /// incoming carrier texts. If the reply is addressed to another VM's number, it's delivered there too
+    /// (VM-to-VM texting). Call this on a timer while the carrier console is open.
+    func pollReplies() async {
+        for line in lines {
+            let baseline = lastReplyRowID[line.vmID]
+            let result = await delivery.readReplies(vmID: line.vmID, since: baseline ?? 0)
+            // First time we see this VM, remember where it is and don't replay its existing sent messages.
+            if baseline == nil {
+                lastReplyRowID[line.vmID] = result.lastRowID
+                save()
+                continue
+            }
+            guard result.lastRowID > baseline! else { continue }
+            lastReplyRowID[line.vmID] = result.lastRowID
+            for reply in result.messages {
+                let to = Self.normalize(reply.to)
+                var m = Message(kind: .text, from: line.number, to: to, body: reply.body, delivered: true, note: "from VM")
+                if let destVM = vmID(for: to), destVM != line.vmID {
+                    do { try await delivery.deliver(m, to: destVM) }
+                    catch { m.delivered = false; m.note = error.localizedDescription }
+                }
+                messages.append(m)
+            }
+            if messages.count > 2000 { messages.removeFirst(messages.count - 2000) }
+            save()
+        }
+    }
+
     private func route(_ message: Message) async {
         var m = message
         if let vmID = vmID(for: m.to) {
@@ -101,17 +134,28 @@ final class CarrierStore: ObservableObject {
               let saved = try? JSONDecoder.iso.decode(Saved.self, from: data) else { return }
         lines = saved.lines
         messages = saved.messages
+        lastReplyRowID = Dictionary(uniqueKeysWithValues: saved.lastReplyRowID.compactMap { key, value in
+            UUID(uuidString: key).map { ($0, value) }
+        })
     }
 
     private func save() {
-        try? JSONEncoder.iso.encode(Saved(lines: lines, messages: messages)).write(to: file, options: .atomic)
+        let rowIDs = Dictionary(uniqueKeysWithValues: lastReplyRowID.map { ($0.key.uuidString, $0.value) })
+        try? JSONEncoder.iso.encode(Saved(lines: lines, messages: messages, lastReplyRowID: rowIDs)).write(to: file, options: .atomic)
     }
 }
 
-/// How a routed message reaches iOS inside the VM. Placeholder until the in-VM delivery is chosen
-/// (notification, a Carrier inbox app, or Messages).
+/// How a routed message reaches iOS inside the VM, and how replies come back out.
 protocol CarrierDelivery {
     func deliver(_ message: CarrierStore.Message, to vmID: UUID) async throws
+    /// Texts the VM's user sent (is_from_me) with a ROWID greater than `since`, plus the new high-water ROWID.
+    func readReplies(vmID: UUID, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int)
+}
+
+extension CarrierDelivery {
+    func readReplies(vmID: UUID, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int) {
+        ([], since)
+    }
 }
 
 struct LogOnlyDelivery: CarrierDelivery {

@@ -31,6 +31,13 @@ struct CarrierConsoleView: View {
             logSection.frame(minWidth: 360)
         }
         .frame(minWidth: 780, minHeight: 480)
+        .task {
+            // While this window is open, watch running VMs for replies typed in their Messages app.
+            while !Task.isCancelled {
+                await carrier.pollReplies()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
     }
 
     private var devicesSection: some View {
@@ -102,11 +109,12 @@ struct CarrierConsoleView: View {
             Table(carrier.messages.reversed()) {
                 TableColumn("Time") { m in Text(m.date, style: .time).foregroundStyle(.secondary) }.width(70)
                 TableColumn("Type") { m in Text(m.kind.rawValue) }.width(50)
+                TableColumn("") { m in Text(m.note == "from VM" ? "◀︎" : "▶︎").foregroundStyle(m.note == "from VM" ? .blue : .secondary) }.width(24)
                 TableColumn("From → To") { m in Text("\(m.from) → \(m.to)").lineLimit(1) }
                 TableColumn("Message") { m in Text(m.body).lineLimit(2) }
                 TableColumn("Status") { m in
-                    Text(m.delivered ? "Delivered" : (m.note ?? "Not delivered"))
-                        .foregroundStyle(m.delivered ? .green : .secondary).lineLimit(2)
+                    Text(m.note == "from VM" ? "Received" : (m.delivered ? "Delivered" : (m.note ?? "Not delivered")))
+                        .foregroundStyle(m.note == "from VM" ? .blue : (m.delivered ? .green : .secondary)).lineLimit(2)
                 }
             }
         }
