@@ -93,6 +93,11 @@ struct VMDetailView: View {
                 action("Respring", help: "Restart SpringBoard (refreshes home screen icons)") { runner.sendToSerial("killall -9 SpringBoard") }
                 action("Refresh App Icons", help: "Run uicache for all apps") { runner.sendToSerial("uicache -a") }
             }
+            Section("Carrier (needs internet)") {
+                action("Set Up Carrier", help: "Installs the helper that puts Carrier Console texts into Messages") {
+                    Task { await runner.setupCarrier() }
+                }
+            }
             Section("Package Managers (needs internet)") {
                 ForEach(VMRunner.PackageManager.allCases) { manager in
                     action("Install \(manager.rawValue)", help: "Downloads \(manager.rawValue) and installs it with dpkg") { runner.install(manager) }

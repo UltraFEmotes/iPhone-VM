@@ -225,6 +225,30 @@ final class VMRunner: ObservableObject {
         ].forEach(sendToSerial)
     }
 
+    /// Installs the carrier helper: a sqlite3 signed on the Mac with the SMS storage entitlement
+    /// (InfernoData/carrier/carrier-sqlite3), served by the companion at 192.168.178.1:8088 and pulled
+    /// into the VM. iOS's sandbox refuses the Messages folder even to root without that entitlement.
+    func setupCarrier() async {
+        note("setting up the carrier helper…")
+        let served = await Companion.run("bash /mnt/host/carrier/serve.sh").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard served == "HTTP 200" else {
+            note("the companion couldn't serve the helper (\(served)) — check InfernoData/carrier/carrier-sqlite3 exists")
+            return
+        }
+        let tool = MessagesDelivery.sqliteTool, db = "/var/mobile/Library/SMS/sms.db"
+        [
+            "mount -uw /",
+            "mkdir -p /usr/local/bin && curl -s -o \(tool) http://192.168.178.1:8088/carrier-sqlite3 && chmod 755 \(tool) && echo CARRIER_TOOL_OK",
+            "echo CARRIER_TABLES; \(tool) \(db) '.tables' 2>&1 | head -5",
+            "echo CARRIER_SCHEMA_BEGIN; \(tool) \(db) '.schema handle' '.schema chat' '.schema message' '.schema chat_message_join' '.schema chat_handle_join' 2>&1; echo CARRIER_SCHEMA_END",
+            "echo CARRIER_TRIGGERS; \(tool) \(db) \"select name from sqlite_master where type='trigger';\" 2>&1; echo CARRIER_SETUP_DONE",
+        ].forEach(sendToSerial)
+        // Snapshot the Terminal log once the output is in, so it can be read outside the app.
+        try? await Task.sleep(nanoseconds: 40_000_000_000)
+        saveLog()
+        note("carrier setup finished — log saved")
+    }
+
     /// Restarts the companion's tethering (DHCP/NAT) in case the VM lost internet.
     func restartInternet() async {
         note("restarting USB internet on the companion…")
