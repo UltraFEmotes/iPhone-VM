@@ -1,0 +1,15 @@
+diff --git a/hw/arm/apple-silicon/t8030.c b/hw/arm/apple-silicon/t8030.c
+--- a/hw/arm/apple-silicon/t8030.c
++++ b/hw/arm/apple-silicon/t8030.c
+@@
+-    // sbd = apple_aop_audio_create(APPLE_AOP(aop));
+-    // assert_nonnull(sbd);
+-    // object_property_add_child(OBJECT(aop), "aop-audio", OBJECT(sbd));
+-    // sysbus_realize_and_unref(sbd, &error_fatal);
++    sbd = apple_aop_audio_create(APPLE_AOP(aop));
++    assert_nonnull(sbd);
++    object_property_add_child(OBJECT(aop), "aop-audio", OBJECT(sbd));
++    sysbus_realize_and_unref(sbd, &error_fatal);
+ 
+     sysbus_realize_and_unref(aop, &error_fatal);
+ }
