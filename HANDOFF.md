@@ -41,6 +41,17 @@
 > notification, a Carrier inbox app, or Messages. Any in-VM delivery needs a way into the guest — realistically
 > the jailbreak bootstrap's root shell on the serial console (iOS 14/15 only).
 >
+> **VM internet works (2026-09-13):** InfernoMac starts the companion before booting a VM; the iPhone VM's
+> emulated USB (`/tmp/InfernoUSBRemote`) reaches the companion, which reverse-tethers it (CDC-NCM
+> `enxdeadbeef*` → `192.168.178.1`, dnsmasq DHCP/DNS with `no-resolv` + `server=10.0.2.3`, NAT out `enp0s1`).
+> Gotchas fixed: (1) the companion's udev rule must fire on `add|move` (the NIC is created as `usb0` then renamed)
+> — now it runs `iphone-tether.service`; (2) usbmuxd exits when idle, so start it before `idevicepair pair`
+> (the **Send Trust Prompt** button does); (3) if "Don't Trust" was tapped, iOS refuses on that USB connection
+> until the VM reboots — changing the companion's SystemBUID does not help. iOS takes ~2 min after boot to
+> enable USB. Companion pairing identity was reset; old one backed up in `/var/lib/lockdown/backup-*`.
+> **Install Zebra** button (jailbroken VMs) types Elucubratus (`apt.bingner.com ios/1700.00`) + Zebra
+> (`getzbra.com/repo`) sources and `apt-get install uikittools xyz.willy.zebra` into the serial root shell — untested.
+>
 > **Not tested yet:** every experimental version (none has been set up end-to-end). Each download is 4.5–8 GB and
 > the Mac has ~13 GB free, so test one at a time.
 
