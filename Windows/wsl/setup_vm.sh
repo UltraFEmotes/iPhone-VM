@@ -98,7 +98,7 @@ restore() {
     "${CSSH[@]}" "mkdir -p ~/cache/${name%.ipsw} && python3 - <<'EOF'
 import zipfile, shutil, os
 z = zipfile.ZipFile('/mnt/host/ipsw-cache/$name')
-big = max(z.infolist(), key=lambda i: i.file_size if i.filename.endswith('.dmg') else 0)
+big = max(z.infolist(), key=lambda i: i.file_size if i.filename.endswith(('.dmg', '.dmg.aea')) else 0)
 dest = os.path.expanduser('~/cache/${name%.ipsw}/' + big.filename)
 if not (os.path.exists(dest) and os.path.getsize(dest) == big.file_size):
     with z.open(big) as s, open(dest, 'wb') as d: shutil.copyfileobj(s, d, 16 << 20)

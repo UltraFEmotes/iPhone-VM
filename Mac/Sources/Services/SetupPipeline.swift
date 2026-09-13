@@ -215,7 +215,7 @@ final class SetupPipeline: ObservableObject {
         mkdir -p \(cacheDir) && python3 - <<'EOF'
         import zipfile, shutil, os
         z = zipfile.ZipFile("/mnt/host/ipsw-cache/\(ipswName)")
-        big = max(z.infolist(), key=lambda i: i.file_size if i.filename.endswith(".dmg") else 0)
+        big = max(z.infolist(), key=lambda i: i.file_size if i.filename.endswith((".dmg", ".dmg.aea")) else 0)
         dest = os.path.expanduser("\(cacheDir)/" + big.filename)
         if not (os.path.exists(dest) and os.path.getsize(dest) == big.file_size):
             with z.open(big) as s, open(dest, "wb") as d: shutil.copyfileobj(s, d, 16 << 20)
@@ -227,6 +227,8 @@ final class SetupPipeline: ObservableObject {
         // 3. boot restore ramdisk, then trigger the restore within its 120 s window
         let runner = VMRunner(vm: vm, entry: entry)
         runner.start(restoreMode: true)
+        // Never leave the restore-ramdisk VM running when the restore fails part-way.
+        defer { if runner.isRunning { runner.stop() } }
         var ready = false
         for _ in 0..<120 where !ready {
             try await Task.sleep(nanoseconds: 2_000_000_000)
