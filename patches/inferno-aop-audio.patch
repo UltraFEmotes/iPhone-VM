@@ -1,15 +1,28 @@
 diff --git a/hw/arm/apple-silicon/t8030.c b/hw/arm/apple-silicon/t8030.c
+index 565f02e..8b2045b 100644
 --- a/hw/arm/apple-silicon/t8030.c
 +++ b/hw/arm/apple-silicon/t8030.c
-@@
+@@ -2447,4 +2447,6 @@ static void t8030_create_aop(AppleT8030MachineState *t8030)
 -    // sbd = apple_aop_audio_create(APPLE_AOP(aop));
 -    // assert_nonnull(sbd);
 -    // object_property_add_child(OBJECT(aop), "aop-audio", OBJECT(sbd));
 -    // sysbus_realize_and_unref(sbd, &error_fatal);
-+    sbd = apple_aop_audio_create(APPLE_AOP(aop));
-+    assert_nonnull(sbd);
-+    object_property_add_child(OBJECT(aop), "aop-audio", OBJECT(sbd));
-+    sysbus_realize_and_unref(sbd, &error_fatal);
- 
-     sysbus_realize_and_unref(aop, &error_fatal);
- }
++    if (t8030->aop_audio) {
++        sbd = apple_aop_audio_create(APPLE_AOP(aop));
++        assert_nonnull(sbd);
++        object_property_add_child(OBJECT(aop), "aop-audio", OBJECT(sbd));
++        sysbus_realize_and_unref(sbd, &error_fatal);
++    }
+@@ -3061,0 +3064 @@ PROP_GETTER_SETTER(bool, force_dfu);
++PROP_GETTER_SETTER(bool, aop_audio);
+@@ -3128,0 +3132,4 @@ static void t8030_class_init(ObjectClass *klass, const void *data)
++    object_class_property_add_bool(klass, "aop-audio", t8030_get_aop_audio,
++                                   t8030_set_aop_audio);
++    object_class_property_set_description(klass, "aop-audio",
++                                          "Enable experimental AOP audio");
+diff --git a/include/hw/arm/apple-silicon/t8030.h b/include/hw/arm/apple-silicon/t8030.h
+index 3e53c81..b6bbde6 100644
+--- a/include/hw/arm/apple-silicon/t8030.h
++++ b/include/hw/arm/apple-silicon/t8030.h
+@@ -73,0 +74 @@ typedef struct {
++    bool aop_audio;

@@ -28,6 +28,9 @@ final class VMRunner: ObservableObject {
         // Phone Info properties exist only on the iPhone 11 (t8030) machine.
         let identity = entry.machine == "t8030" ? (vm.identity?.machineProperties ?? []).map { "," + $0 }.joined() : ""
         var machine = "\(entry.machine),trustcache=\(f("trustcache")),kaslr-off=true"
+        if entry.machine == "t8030", vm.effectiveAudioMode.enablesAOPAudio {
+            machine += ",aop-audio=true"
+        }
         if !simulatedSEP || FileManager.default.fileExists(atPath: f("root_ticket.der")) {
             machine += ",ticket=\(f("root_ticket.der"))"
         }
@@ -41,7 +44,7 @@ final class VMRunner: ObservableObject {
             "-name", title,
             // Multi-threaded TCG spreads the emulated cores over host threads (the guest CPU is emulated;
             // Inferno's Apple SoC can't use HVF). tb-size is kept modest to avoid adding host memory pressure.
-            "-accel", "tcg,thread=multi,tb-size=256",
+            "-accel", "tcg,thread=multi,tb-size=\(vm.effectivePerformanceMode.tcgTBSize)",
             // The MCA (I2S) audio device is wired to QEMU's audio system; give it a Mac backend so the
             // guest's audio reaches the speakers. Without an -audiodev it silently falls back to "none".
             "-audiodev", "coreaudio,id=snd0",
@@ -171,6 +174,12 @@ final class VMRunner: ObservableObject {
             append("[starting \(entry.deviceName) \(entry.ios)]\n")
             if !vm.effectiveGraphicsMode.isImplemented {
                 append("[experimental graphics '\(vm.effectiveGraphicsMode.title)' is not implemented in the engine yet; using Software Framebuffer]\n")
+            }
+            if vm.effectivePerformanceMode == .fastTCG {
+                append("[performance mode: Fast TCG; close memory-heavy apps if the Mac starts swapping]\n")
+            }
+            if vm.effectiveAudioMode == .aopCoreAudio {
+                append("[experimental audio: AOP/CoreAudio enabled; switch back to Disabled if SpringBoard panics]\n")
             }
             try p.run()
             process = p

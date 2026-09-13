@@ -37,6 +37,68 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
         }
     }
 
+    enum PerformanceMode: String, Codable, CaseIterable, Identifiable {
+        case balanced
+        case fastTCG
+        case lowMemory
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .balanced: return "Balanced"
+            case .fastTCG: return "Fast TCG"
+            case .lowMemory: return "Low Memory"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .balanced:
+                return "Uses the current multi-threaded TCG settings with a moderate translation cache."
+            case .fastTCG:
+                return "Gives TCG a larger translation cache. Faster when RAM is available, worse if the Mac starts swapping."
+            case .lowMemory:
+                return "Uses a smaller translation cache to reduce host memory pressure."
+            }
+        }
+
+        var tcgTBSize: Int {
+            switch self {
+            case .balanced: return 256
+            case .fastTCG: return 768
+            case .lowMemory: return 128
+            }
+        }
+    }
+
+    enum AudioMode: String, Codable, CaseIterable, Identifiable {
+        case disabled
+        case aopCoreAudio
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .disabled: return "Disabled"
+            case .aopCoreAudio: return "AOP CoreAudio"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .disabled:
+                return "Stable default. Does not expose the unfinished AOP audio service to iOS."
+            case .aopCoreAudio:
+                return "Experimental. Exposes Inferno's AOP audio service and QEMU's CoreAudio backend."
+            }
+        }
+
+        var enablesAOPAudio: Bool {
+            self == .aopCoreAudio
+        }
+    }
+
     /// Device identity passed to Inferno's machine properties. Empty = Inferno's default.
     /// ECID is not editable here: the restore's boot ticket and SEP data are tied to it.
     struct PhoneIdentity: Codable, Hashable {
@@ -67,8 +129,12 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
     var createdAt: Date
     var identity: PhoneIdentity? = nil
     var graphicsMode: GraphicsMode? = nil
+    var performanceMode: PerformanceMode? = nil
+    var audioMode: AudioMode? = nil
 
     var effectiveGraphicsMode: GraphicsMode { graphicsMode ?? .softwareFramebuffer }
+    var effectivePerformanceMode: PerformanceMode { performanceMode ?? .balanced }
+    var effectiveAudioMode: AudioMode { audioMode ?? .disabled }
 
     var folder: URL { VMStore.vmsRoot.appendingPathComponent(id.uuidString, isDirectory: true) }
     func file(_ name: String) -> URL { folder.appendingPathComponent(name) }

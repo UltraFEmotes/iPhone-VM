@@ -164,6 +164,37 @@ struct VMDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section("Performance") {
+                Picker("Mode", selection: performanceModeBinding) {
+                    ForEach(VirtualMachine.PerformanceMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Text(currentPerformanceMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Changes apply the next time this VM starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Experimental Audio") {
+                Picker("Mode", selection: audioModeBinding) {
+                    ForEach(VirtualMachine.AudioMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Text(currentAudioMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if currentAudioMode == .aopCoreAudio {
+                    Text("This can trigger iOS 14 SpringBoard/kernel instability while the AOP service is incomplete.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                Text("Changes apply the next time this VM starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if vm.jailbroken {
                 Section("Clipboard") {
                     Toggle("Clipboard Sync", isOn: Binding(
@@ -188,12 +219,44 @@ struct VMDetailView: View {
         currentVM.effectiveGraphicsMode
     }
 
+    private var currentPerformanceMode: VirtualMachine.PerformanceMode {
+        currentVM.effectivePerformanceMode
+    }
+
+    private var currentAudioMode: VirtualMachine.AudioMode {
+        currentVM.effectiveAudioMode
+    }
+
     private var graphicsModeBinding: Binding<VirtualMachine.GraphicsMode> {
         Binding(
             get: { currentGraphicsMode },
             set: { mode in
                 var updated = currentVM
                 updated.graphicsMode = mode == .softwareFramebuffer ? nil : mode
+                try? store.save(updated)
+                reloadRunnerIfStopped()
+            }
+        )
+    }
+
+    private var performanceModeBinding: Binding<VirtualMachine.PerformanceMode> {
+        Binding(
+            get: { currentPerformanceMode },
+            set: { mode in
+                var updated = currentVM
+                updated.performanceMode = mode == .balanced ? nil : mode
+                try? store.save(updated)
+                reloadRunnerIfStopped()
+            }
+        )
+    }
+
+    private var audioModeBinding: Binding<VirtualMachine.AudioMode> {
+        Binding(
+            get: { currentAudioMode },
+            set: { mode in
+                var updated = currentVM
+                updated.audioMode = mode == .disabled ? nil : mode
                 try? store.save(updated)
                 reloadRunnerIfStopped()
             }
