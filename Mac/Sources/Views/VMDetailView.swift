@@ -128,6 +128,11 @@ struct VMDetailView: View {
                 action("Send Trust Prompt", help: "Ask iOS to trust the companion (needed once for USB internet)", disabled: !runner.isRunning) {
                     Task { await runner.sendTrustPrompt() }
                 }
+                if vm.jailbroken {
+                    action("Repair Carrier", help: "Restart the broker and reinstall the in-VM carrier helpers", disabled: !runner.isRunning) {
+                        Task { await runner.setupCarrier() }
+                    }
+                }
                 action("Restart Internet", help: "Restart usbmuxd, tethering and DHCP on the companion", disabled: !runner.isRunning) {
                     Task { await runner.restartInternet() }
                 }

@@ -34,7 +34,7 @@ struct MessagesDelivery: CarrierDelivery {
         if runner.interactiveInputIsRecent { return ([], since) }
         let marker = String(UUID().uuidString.prefix(8))
         runner.sendToSerial("echo CR_\(marker)_BEGIN; \(Self.helper) poll \(since); echo CR_\(marker)_END")
-        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        try? await Task.sleep(nanoseconds: 900_000_000)
         return Self.parseReplies(runner.log, marker: marker, since: since)
     }
 

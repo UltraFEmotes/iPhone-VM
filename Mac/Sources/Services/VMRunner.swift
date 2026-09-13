@@ -236,6 +236,10 @@ final class VMRunner: ObservableObject {
         switch await Companion.sendTrustPrompt() {
         case .paired:
             note("paired ✓ — USB internet should come up within a minute")
+            if vm.jailbroken {
+                note("auto-preparing carrier helpers after Trust")
+                await setupCarrier()
+            }
         case .denied:
             note("iOS is refusing on this USB connection (Don't Trust was tapped). Stop and Start the VM, then press Send Trust Prompt again and tap Trust.")
         case .noDevice:
@@ -305,7 +309,9 @@ final class VMRunner: ObservableObject {
             "echo 'deb [trusted=yes] http://192.168.178.1:8088/repo/ ./' > /etc/apt/sources.list.d/carrier.list",
             "rm -rf /var/lib/apt/lists/*",
             "apt-get update",
-            "cd /tmp/cs && rm -f *.deb && apt-get download --allow-unauthenticated carrier-sqlite3 && dpkg -i --force-depends *.deb",
+            "cd /tmp/cs && rm -f *.deb",
+            "cd /tmp/cs && apt-get download --allow-unauthenticated carrier-sqlite3",
+            "cd /tmp/cs && dpkg -i --force-depends *.deb",
             "nohup /usr/local/bin/carrier-agentd >/tmp/agent.log 2>&1 &",
             "test -x \(MessagesDelivery.helper) && echo CARRIER_SETUP_DONE || echo CARRIER_SETUP_FAILED",
         ].forEach(sendToSerial)

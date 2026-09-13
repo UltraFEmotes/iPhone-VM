@@ -150,8 +150,15 @@ final class CarrierStore: ObservableObject {
     private func route(_ message: Message) async {
         var m = message
         m.delivered = true                          // recorded on the Mac carrier
-        // If the recipient is a running jailbroken VM, best-effort mirror into it; ignore failure.
-        if let vmID = vmID(for: m.to) { try? await delivery.deliver(m, to: vmID) }
+        // If the recipient is a running jailbroken VM, mirror it into the real Messages app and show failures.
+        if let vmID = vmID(for: m.to) {
+            do {
+                try await delivery.deliver(m, to: vmID)
+            } catch {
+                m.delivered = false
+                m.note = error.localizedDescription
+            }
+        }
         messages.append(m)
         if messages.count > 2000 { messages.removeFirst(messages.count - 2000) }
         save()

@@ -27,7 +27,7 @@ struct CarrierConsoleView: View {
             // Bring replies typed in a running VM's Messages back into these conversations.
             while !Task.isCancelled {
                 if liveReplies { await carrier.pollReplies() }
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
         }
         .sheet(isPresented: $showNumbers) { NumbersSheet().environmentObject(store).environmentObject(carrier) }
@@ -139,6 +139,9 @@ struct CarrierConsoleView: View {
                     .foregroundStyle(mine && !isAdmin ? .white : .primary)
                     .clipShape(RoundedRectangle(cornerRadius: 15))
                 Text(m.date, style: .time).font(.caption2).foregroundStyle(.secondary)
+                if !m.delivered, let note = m.note {
+                    Text(note).font(.caption2).foregroundStyle(.red)
+                }
             }
             if !mine { Spacer(minLength: 40) }
         }
