@@ -60,7 +60,10 @@ struct SerialConsoleView: NSViewRepresentable {
 
         nonisolated func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
             let bytes = Data(data)
-            Task { @MainActor in self.runner.sendRaw(bytes) }
+            Task { @MainActor in
+                self.runner.noteInteractiveInput()   // pause the carrier poller while the user types
+                self.runner.sendRaw(bytes)
+            }
         }
 
         nonisolated func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {

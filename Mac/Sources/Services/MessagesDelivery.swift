@@ -30,6 +30,8 @@ struct MessagesDelivery: CarrierDelivery {
     func readReplies(vmID: UUID, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int) {
         guard let runner = registry.runningRunner(vmID),
               store.machines.first(where: { $0.id == vmID })?.jailbroken == true else { return ([], since) }
+        // Don't inject a poll command while the user is typing in the Terminal — it shares this serial line.
+        if runner.interactiveInputIsRecent { return ([], since) }
         let marker = String(UUID().uuidString.prefix(8))
         runner.sendToSerial("echo CR_\(marker)_BEGIN; \(Self.helper) poll \(since); echo CR_\(marker)_END")
         try? await Task.sleep(nanoseconds: 2_500_000_000)

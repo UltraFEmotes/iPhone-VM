@@ -13,6 +13,7 @@ struct CarrierConsoleView: View {
     @State private var draft = ""
     @State private var newNumber = ""
     @State private var showNumbers = false
+    @AppStorage("carrier.liveReplies") private var liveReplies = true
 
     var body: some View {
         NavigationSplitView {
@@ -25,7 +26,7 @@ struct CarrierConsoleView: View {
         .task {
             // Bring replies typed in a running VM's Messages back into these conversations.
             while !Task.isCancelled {
-                await carrier.pollReplies()
+                if liveReplies { await carrier.pollReplies() }
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
@@ -42,7 +43,12 @@ struct CarrierConsoleView: View {
                     ForEach(carrier.allNumbers(), id: \.self) { Text(label($0)).tag($0) }
                 }
                 .labelsHidden()
-                Button("Manage numbers…") { showNumbers = true }.font(.caption)
+                HStack {
+                    Button("Manage numbers…") { showNumbers = true }.font(.caption)
+                    Spacer()
+                    Toggle("Live", isOn: $liveReplies).toggleStyle(.switch).controlSize(.mini)
+                        .help("Watch running VMs for replies (pauses automatically while you type in the Terminal)")
+                }
             }
             .padding(12)
             Divider()

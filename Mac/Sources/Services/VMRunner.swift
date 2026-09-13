@@ -178,6 +178,12 @@ final class VMRunner: ObservableObject {
         stdinPipe?.fileHandleForWriting.write(bytes)
     }
 
+    /// When the user last typed in the interactive console. The carrier reply-poller backs off while the
+    /// user is typing so its `carrier-msg poll` lines don't collide with their commands on the shared serial.
+    private(set) var lastInteractiveInput = Date.distantPast
+    func noteInteractiveInput() { lastInteractiveInput = Date() }
+    var interactiveInputIsRecent: Bool { Date().timeIntervalSince(lastInteractiveInput) < 8 }
+
     /// Raw serial output for the interactive console. Every chunk is passed on unmodified, so the
     /// terminal sees escape sequences; `rawBacklog` replays recent output when a console opens.
     private(set) var rawBacklog = Data()
