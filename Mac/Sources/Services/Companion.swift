@@ -25,7 +25,8 @@ enum Companion {
 
     /// Asks iOS to pair with the companion once; iOS shows its "Trust This Computer?" prompt.
     static func sendTrustPrompt() async -> TrustResult {
-        let out = await run("idevicepair pair 2>&1; idevicepair validate 2>&1")
+        // usbmuxd exits when idle; it must be running for idevicepair to see the iPhone.
+        let out = await run("sudo systemctl start usbmuxd; sleep 3; idevicepair pair 2>&1; idevicepair validate 2>&1")
         if out.contains("SUCCESS") { return .paired }
         if out.contains("denied the trust dialog") { return .denied }
         if out.contains("No device found") || out.contains("Unable to retrieve") { return .noDevice }
