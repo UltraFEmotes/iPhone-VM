@@ -23,6 +23,15 @@ LP=/Volumes/System/System/Library/xpc/launchd.plist
 [ -f "$VM/launchd.plist.orig" ] || cp "$LP" "$VM/launchd.plist.orig"
 
 if [ "$JB" = "1" ]; then
+    # The bootstrap is checkra1n's (iOS 12–14). On newer iOS it would break the system, so skip it there.
+    IOS=$(/usr/libexec/PlistBuddy -c "Print :ProductVersion" /Volumes/System/System/Library/CoreServices/SystemVersion.plist 2>/dev/null || echo "")
+    if [ -z "$IOS" ] || [ "${IOS%%.*}" -gt 14 ] 2>/dev/null; then
+        echo "== iOS ${IOS:-unknown}: the jailbreak bootstrap only supports iOS 12–14 — skipping it (VM stays stock)"
+        JB=0
+    fi
+fi
+
+if [ "$JB" = "1" ]; then
     echo "== installing jailbreak bootstrap"
     STRAP="$DATA/strap.tar.lzma"
     if [ ! -f "$STRAP" ]; then
