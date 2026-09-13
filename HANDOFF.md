@@ -263,3 +263,27 @@ open(out, "wb").write(plistlib.dumps(record)); os.chmod(out, 0o600)
 Setup wizard (device/iOS/jailbreak picker), in-app downloads + background restore + "restore complete"
 notification, Mac "carrier" console (custom numbers/texts/calls/admin messages), file explorer,
 send-notification-to-VM, custom phone info (serial etc.), multi-VM.
+
+---
+
+## InfernoWin (Windows, for the owner's friend) — built 2026-09-13, never run on Windows yet
+- `Windows/InfernoWin/`: WPF app (.NET 10), builds on the Mac via `EnableWindowsTargeting`.
+  Package: `dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`, then zip
+  the exe + `Windows/wsl/` + `Windows/README.txt` → `out/InfernoWin-win-x64.zip`.
+- `Windows/wsl/`: bash backend the app copies to `~/.infernowin/wsl` in WSL2 (Ubuntu):
+  `install.sh` (guide's Linux build, nettle 3.10 if needed, x86_64 Debian "generic" companion with
+  KVM when `/dev/kvm` exists), `setup_vm.sh` (same steps as InfernoMac), `start_vm.sh` (GTK window via
+  WSLg, serial on stdio, QMP on 127.0.0.1:4450+), `companion.sh`.
+- FS patches run **in the companion** with Debian's `apfs-dkms` (`mount -o vol=0,readwrite`).
+  Verified on a cloned iPhone disk from the Mac companion: write works, macOS reads it back fine.
+  **Gotcha:** the iPhone disk must be attached with `logical_block_size=4096` or Linux sees no GPT.
+  macOS `fsck_apfs -n` always reports keybag errors on iOS containers — not a useful corruption check.
+- Only iOS 14.0b5 has an engine; other SEP versions need `build-sepNN` (not scripted for Linux).
+
+## Carrier (simulated, Messages app)
+Real baseband: iOS loads the Intel modem driver on `build-bb` but stops after one BAR1 read — not
+feasible. Simulated instead: `MessagesDelivery` inserts into `sms.db` over the serial root shell.
+iOS's sandbox refuses the SMS folder even to root, so a sqlite3 re-signed on the Mac with
+`com.apple.private.security.storage.SMS` (in `InfernoData/carrier/`, served by the companion on
+`192.168.178.1:8088`) is installed by the Jailbreak tab's **Set Up Carrier**. Waiting on its first run.
+A modem boot also needs `/System/Library/Caches/com.apple.factorydata` (created on the current VM).
