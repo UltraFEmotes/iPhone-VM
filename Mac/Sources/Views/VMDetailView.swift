@@ -72,6 +72,21 @@ struct VMDetailView: View {
                 }
             }
             .disabled(!runner.isRunning)
+            HStack {
+                Button("Send Trust Prompt") {
+                    tab = .terminal
+                    Task { await runner.sendTrustPrompt() }
+                }
+                .help("Ask iOS to trust the companion (needed once for USB internet)")
+                if vm.jailbroken {
+                    Button("Install Zebra") {
+                        tab = .terminal
+                        runner.installZebra()
+                    }
+                    .help("Install the Zebra package manager via apt (needs internet)")
+                }
+            }
+            .disabled(!runner.isRunning)
             Text("The phone screen opens in its own window while the VM runs.")
                 .font(.caption).foregroundStyle(.secondary)
             if registry.runningCount > 1 {

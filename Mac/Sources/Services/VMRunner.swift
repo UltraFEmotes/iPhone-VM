@@ -164,6 +164,43 @@ final class VMRunner: ObservableObject {
         stdinPipe?.fileHandleForWriting.write(Data((line + "\n").utf8))
     }
 
+    /// Writes a message into the Terminal log (used by the VM tab's buttons).
+    func note(_ text: String) {
+        append("\n[\(text)]\n")
+    }
+
+    /// Asks iOS (via the companion) to pair, which shows the "Trust This Computer?" prompt in the VM.
+    func sendTrustPrompt() async {
+        note("asking iOS to trust the companion…")
+        switch await Companion.sendTrustPrompt() {
+        case .paired:
+            note("paired ✓ — USB internet should come up within a minute")
+        case .denied:
+            note("iOS is refusing on this USB connection (Don't Trust was tapped). Stop and Start the VM, then press Send Trust Prompt again and tap Trust.")
+        case .noDevice:
+            note("the companion doesn't see the iPhone yet — wait until iOS has fully booted, then try again")
+        case .other(let message):
+            note(message)
+        }
+    }
+
+    /// Installs the Zebra package manager through the jailbreak's root shell on the serial console.
+    /// Needs the VM to have internet. Untested on this setup — output shows in the Terminal tab.
+    func installZebra() {
+        note("installing Zebra (needs internet; watch the output below)")
+        let commands = [
+            "mkdir -p /etc/apt/sources.list.d",
+            // Elucubratus (the checkra1n bootstrap's repo) for iOS 14 = CoreFoundation 1700
+            "echo 'deb https://apt.bingner.com/ ios/1700.00 main' > /etc/apt/sources.list.d/bingner.list",
+            "echo 'deb [trusted=yes] https://getzbra.com/repo/ ./' > /etc/apt/sources.list.d/zebra.list",
+            "apt-get update",
+            "apt-get install -y --allow-unauthenticated uikittools xyz.willy.zebra",
+            "uicache -a || uicache -p /Applications/Zebra.app",
+            "echo ZEBRA_INSTALL_DONE",
+        ]
+        for command in commands { sendToSerial(command) }
+    }
+
     /// Inferno maps the device buttons to function keys (see the Inferno guide).
     enum Button: String, CaseIterable, Identifiable {
         case power = "f5", home = "f6", volumeUp = "f4", volumeDown = "f3", ringer = "f2"
