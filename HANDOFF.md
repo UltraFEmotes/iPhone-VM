@@ -312,3 +312,14 @@ A modem boot also needs `/System/Library/Caches/com.apple.factorydata` (created 
   Shares the CLI's data dir; SSE serial console, VNC screen via websockify+noVNC (one port per VM from 6080).
   start_vm.sh now honours INFERNO_DISPLAY (vnc=/none) and INFERNO_SERIAL (tcp:). Tested to the API level in the
   Debian companion; noVNC screen and a real VM boot over the web UI are NOT yet tested. Model since this turn: Opus 4.8.
+
+## Simulated carrier — WORKING (2026-09-14)
+Custom-number texts appear in the VM's REAL Messages app, both ways, live (no reboot). How:
+- Data-vault bypass entitlement: **com.apple.private.security.storage-exempt.heritable** (storage.SMS alone failed).
+  Entitled sqlite3 = InfernoData/carrier/carrier-sqlite3; entitlements in Mac/Resources/setup/carrier_ents.plist.
+- Delivered via an apt repo the companion serves (InfernoData/carrier/repo, broker.py :8088); VM has no curl.
+  Isolate the repo (mv other .list aside) or apt-get update fails; mount -uw / each boot.
+- On-VM helper carrier-msg (in the .deb): 'send <num> <text>' inserts + restarts ONLY IMDPersistenceAgent
+  (restarting imagent too duplicates msgs); 'poll <since>' reads replies as ROWID:hex(to):hex(text).
+- App wired (commit 7e9d055): MessagesDelivery over serial; Set Up Carrier installs via apt; console polls replies.
+- TODO: incoming calls (needs CallKit/TU injection, not a DB row); dedupe verified via IMDPersistenceAgent-only refresh.
