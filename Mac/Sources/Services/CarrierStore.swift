@@ -27,6 +27,7 @@ final class CarrierStore: ObservableObject {
         var lines: [Line] = []
         var messages: [Message] = []
         var lastReplyRowID: [String: Int] = [:]
+        var contacts: [String: String] = [:]
     }
 
     @Published private(set) var lines: [Line] = []
@@ -43,6 +44,45 @@ final class CarrierStore: ObservableObject {
 
     func number(for vmID: UUID) -> String? { lines.first { $0.vmID == vmID }?.number }
     func vmID(for number: String) -> UUID? { lines.first { $0.number == Self.normalize(number) }?.vmID }
+
+    /// Custom contact names for numbers not tied to a VM (e.g. "Mom" → +15550•••). VM numbers use the VM name.
+    @Published private(set) var contacts: [String: String] = [:]
+
+    func setContact(_ name: String, for number: String) {
+        let n = Self.normalize(number)
+        guard !n.isEmpty else { return }
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { contacts[n] = nil } else { contacts[n] = name }
+        save()
+    }
+
+    /// Every number the carrier knows: VM lines, named contacts, and anything seen in the log.
+    func allNumbers() -> [String] {
+        var set = Set(lines.map(\.number)).union(contacts.keys)
+        for m in messages { set.insert(m.from); set.insert(m.to) }
+        set.remove(Self.adminNumber)
+        return set.sorted()
+    }
+
+    /// The other parties `me` has exchanged messages with, most-recent first.
+    func peers(of me: String) -> [String] {
+        let me = Self.normalize(me)
+        var last: [String: Date] = [:]
+        for m in messages where m.from == me || m.to == me {
+            let other = m.from == me ? m.to : m.from
+            if other == me { continue }
+            last[other] = max(last[other] ?? .distantPast, m.date)
+        }
+        return last.keys.sorted { (last[$0] ?? .distantPast) > (last[$1] ?? .distantPast) }
+    }
+
+    /// The transcript between two numbers (admin messages to `me` are included).
+    func conversation(_ me: String, _ other: String) -> [Message] {
+        let me = Self.normalize(me), other = Self.normalize(other)
+        return messages.filter {
+            ($0.from == me && $0.to == other) || ($0.from == other && $0.to == me) ||
+            ($0.kind == .admin && $0.to == me && other == Self.adminNumber)
+        }
+    }
 
     /// Assigns (or clears, with an empty string) a VM's phone number. Numbers are unique.
     func assign(_ number: String, to vmID: UUID) throws {
@@ -109,18 +149,17 @@ final class CarrierStore: ObservableObject {
 
     private func route(_ message: Message) async {
         var m = message
-        if let vmID = vmID(for: m.to) {
-            do {
-                try await delivery.deliver(m, to: vmID)
-                m.delivered = true
-            } catch {
-                m.note = error.localizedDescription
-            }
-        } else {
-            m.note = "No VM has number \(m.to)"
-        }
+        m.delivered = true                          // recorded on the Mac carrier
+        // If the recipient is a running jailbroken VM, best-effort mirror into it; ignore failure.
+        if let vmID = vmID(for: m.to) { try? await delivery.deliver(m, to: vmID) }
         messages.append(m)
         if messages.count > 2000 { messages.removeFirst(messages.count - 2000) }
+        save()
+    }
+
+    /// Clears the whole message log (keeps numbers and contacts).
+    func clearMessages() {
+        messages.removeAll()
         save()
     }
 
@@ -134,6 +173,7 @@ final class CarrierStore: ObservableObject {
               let saved = try? JSONDecoder.iso.decode(Saved.self, from: data) else { return }
         lines = saved.lines
         messages = saved.messages
+        contacts = saved.contacts
         lastReplyRowID = Dictionary(uniqueKeysWithValues: saved.lastReplyRowID.compactMap { key, value in
             UUID(uuidString: key).map { ($0, value) }
         })
@@ -141,7 +181,16 @@ final class CarrierStore: ObservableObject {
 
     private func save() {
         let rowIDs = Dictionary(uniqueKeysWithValues: lastReplyRowID.map { ($0.key.uuidString, $0.value) })
-        try? JSONEncoder.iso.encode(Saved(lines: lines, messages: messages, lastReplyRowID: rowIDs)).write(to: file, options: .atomic)
+        try? JSONEncoder.iso.encode(Saved(lines: lines, messages: messages, lastReplyRowID: rowIDs, contacts: contacts))
+            .write(to: file, options: .atomic)
+    }
+
+    /// A display label for a number: VM name if it's a VM line, else a saved contact name, else the number.
+    func displayName(_ number: String, vmName: (UUID) -> String?) -> String {
+        let n = Self.normalize(number)
+        if n == Self.adminNumber { return "Carrier admin" }
+        if let vmID = vmID(for: n), let name = vmName(vmID) { return name }
+        return contacts[n] ?? n
     }
 }
 

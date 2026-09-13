@@ -1,140 +1,199 @@
 import SwiftUI
 
-/// The carrier console: phone numbers per VM, device status, admin messages, texts/calls, traffic log.
+/// The carrier console as a chat app: pick which number you're "speaking as", pick a conversation, and
+/// text back and forth. Custom numbers, VM numbers, and admin broadcasts all live here. Everything is
+/// recorded on the Mac (the phone's own GUI can't render a chat under emulation).
 struct CarrierConsoleView: View {
     @EnvironmentObject private var store: VMStore
     @EnvironmentObject private var registry: RunnerRegistry
     @EnvironmentObject private var carrier: CarrierStore
 
-    @State private var numberEdits: [UUID: String] = [:]
-    @State private var adminText = ""
-    @State private var adminTarget: String = "ALL"
-    @State private var textFrom = ""
-    @State private var textTo = ""
-    @State private var textBody = ""
+    @AppStorage("carrier.speakingAs") private var me: String = ""
+    @State private var peer: String?
+    @State private var draft = ""
+    @State private var newNumber = ""
+    @State private var showNumbers = false
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            conversationPane
+        }
+        .frame(minWidth: 820, minHeight: 520)
+        .onAppear { if me.isEmpty { me = carrier.lines.first?.number ?? "+15550100" } }
+        .sheet(isPresented: $showNumbers) { NumbersSheet().environmentObject(store).environmentObject(carrier) }
+    }
+
+    // MARK: sidebar — who I am + my conversations
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Speaking as").font(.caption).foregroundStyle(.secondary)
+                Picker("", selection: $me) {
+                    ForEach(carrier.allNumbers(), id: \.self) { Text(label($0)).tag($0) }
+                }
+                .labelsHidden()
+                Button("Manage numbers…") { showNumbers = true }.font(.caption)
+            }
+            .padding(12)
+            Divider()
+
+            List(selection: $peer) {
+                Section("Conversations") {
+                    ForEach(carrier.peers(of: me), id: \.self) { other in
+                        conversationRow(other).tag(other)
+                    }
+                }
+            }
+            .overlay { if carrier.peers(of: me).isEmpty { Text("No conversations yet.\nStart one below.").multilineTextAlignment(.center).foregroundStyle(.secondary).font(.callout) } }
+
+            Divider()
+            HStack {
+                TextField("New: number", text: $newNumber).textFieldStyle(.roundedBorder)
+                Button("Chat") {
+                    let n = CarrierStore.normalize(newNumber)
+                    if !n.isEmpty, n != me { peer = n; newNumber = "" }
+                }.disabled(newNumber.isEmpty)
+            }
+            .padding(12)
+        }
+        .navigationSplitViewColumnWidth(min: 240, ideal: 270)
+    }
+
+    private func conversationRow(_ other: String) -> some View {
+        let last = carrier.conversation(me, other).last
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(label(other)).font(.headline).lineLimit(1)
+            if let last { Text((last.kind == .call ? "📞 " : "") + last.body).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+        }
+    }
+
+    // MARK: conversation transcript + compose
+
+    @ViewBuilder
+    private var conversationPane: some View {
+        if let peer {
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(label(peer)).font(.headline)
+                        Text(peer).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button { Task { await carrier.placeCall(from: me, to: peer) } } label: { Image(systemName: "phone.fill") }
+                        .help("Log a call to \(label(peer))")
+                }
+                .padding(12)
+                Divider()
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            ForEach(carrier.conversation(me, peer)) { m in bubble(m) }
+                            Color.clear.frame(height: 1).id("end")
+                        }
+                        .padding(12)
+                    }
+                    .onChange(of: carrier.messages.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                    .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                }
+
+                Divider()
+                HStack {
+                    TextField("Text \(label(peer)) as \(label(me))", text: $draft, axis: .vertical)
+                        .textFieldStyle(.roundedBorder).lineLimit(1...4).onSubmit(sendText)
+                    Button("Send", action: sendText).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(12)
+            }
+        } else {
+            ContentUnavailableView("Pick a conversation", systemImage: "bubble.left.and.bubble.right",
+                                   description: Text("Choose who you're speaking as, then a conversation — or start a new one."))
+        }
+    }
+
+    private func bubble(_ m: CarrierStore.Message) -> some View {
+        let mine = m.from == CarrierStore.normalize(me)
+        let isAdmin = m.kind == .admin
+        return HStack {
+            if mine { Spacer(minLength: 40) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                Text((m.kind == .call ? "📞 " : "") + (isAdmin ? "📢 " : "") + m.body)
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(isAdmin ? Color.orange.opacity(0.25) : (mine ? Color.accentColor : Color(nsColor: .controlBackgroundColor)))
+                    .foregroundStyle(mine && !isAdmin ? .white : .primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                Text(m.date, style: .time).font(.caption2).foregroundStyle(.secondary)
+            }
+            if !mine { Spacer(minLength: 40) }
+        }
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+    }
+
+    private func sendText() {
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let peer, !body.isEmpty else { return }
+        draft = ""
+        Task { await carrier.sendText(from: me, to: peer, body: body) }
+    }
+
+    private func label(_ number: String) -> String {
+        carrier.displayName(number) { id in store.machines.first { $0.id == id }?.name }
+    }
+}
+
+/// Manage numbers: assign a number to each VM, and add named custom contacts.
+private struct NumbersSheet: View {
+    @EnvironmentObject private var store: VMStore
+    @EnvironmentObject private var carrier: CarrierStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var edits: [UUID: String] = [:]
+    @State private var contactNumber = ""
+    @State private var contactName = ""
     @State private var error: String?
 
     var body: some View {
-        HSplitView {
-            VStack(alignment: .leading, spacing: 14) {
-                devicesSection
-                Divider()
-                adminSection
-                Divider()
-                textSection
-                if let error { Text(error).font(.caption).foregroundStyle(.red) }
-                Spacer()
-            }
-            .padding(14)
-            .frame(minWidth: 360, idealWidth: 400)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Numbers").font(.title2.bold())
 
-            logSection.frame(minWidth: 360)
-        }
-        .frame(minWidth: 780, minHeight: 480)
-        .task {
-            // While this window is open, watch running VMs for replies typed in their Messages app.
-            while !Task.isCancelled {
-                await carrier.pollReplies()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-            }
-        }
-    }
-
-    private var devicesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Devices").font(.headline)
-            if store.machines.isEmpty {
-                Text("No VMs yet.").foregroundStyle(.secondary)
-            }
+            Text("VMs").font(.headline)
+            if store.machines.isEmpty { Text("No VMs.").foregroundStyle(.secondary) }
             ForEach(store.machines) { vm in
                 HStack {
-                    Circle().fill(registry.isRunning(vm.id) ? Color.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
-                    Text(vm.name).lineLimit(1)
-                    Spacer()
-                    TextField("Number", text: binding(for: vm))
-                        .textFieldStyle(.roundedBorder).frame(width: 130)
-                        .onSubmit { assign(vm) }
+                    Text(vm.name).frame(width: 220, alignment: .leading).lineLimit(1)
+                    TextField("Number", text: binding(vm)).textFieldStyle(.roundedBorder)
                     Button("Set") { assign(vm) }
                 }
             }
-        }
-    }
 
-    private var adminSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Admin message").font(.headline)
-            Picker("To", selection: $adminTarget) {
-                Text("All devices").tag("ALL")
-                ForEach(carrier.lines) { line in Text("\(name(for: line.vmID)) (\(line.number))").tag(line.number) }
+            Divider()
+            Text("Contacts").font(.headline)
+            ForEach(carrier.contacts.sorted(by: { $0.value < $1.value }), id: \.key) { number, name in
+                HStack { Text(name); Spacer(); Text(number).foregroundStyle(.secondary)
+                    Button(role: .destructive) { carrier.setContact("", for: number) } label: { Image(systemName: "trash") } }
             }
             HStack {
-                TextField("Message", text: $adminText).textFieldStyle(.roundedBorder)
-                Button("Send") {
-                    let body = adminText, target = adminTarget == "ALL" ? nil : adminTarget
-                    Task { await carrier.sendAdmin(body, to: target) }
-                    adminText = ""
-                }
-                .disabled(adminText.isEmpty || carrier.lines.isEmpty)
+                TextField("Name", text: $contactName).textFieldStyle(.roundedBorder).frame(width: 160)
+                TextField("Number", text: $contactNumber).textFieldStyle(.roundedBorder)
+                Button("Add") {
+                    carrier.setContact(contactName, for: contactNumber); contactName = ""; contactNumber = ""
+                }.disabled(contactNumber.isEmpty || contactName.isEmpty)
             }
+
+            if let error { Text(error).foregroundStyle(.red).font(.caption) }
+            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
         }
+        .padding(20).frame(width: 520)
     }
 
-    private var textSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Text or call").font(.headline)
-            HStack {
-                TextField("From", text: $textFrom).textFieldStyle(.roundedBorder)
-                TextField("To", text: $textTo).textFieldStyle(.roundedBorder)
-            }
-            TextField("Message", text: $textBody).textFieldStyle(.roundedBorder)
-            HStack {
-                Button("Send Text") {
-                    let (f, t, b) = (textFrom, textTo, textBody)
-                    Task { await carrier.sendText(from: f, to: t, body: b) }
-                    textBody = ""
-                }
-                .disabled(textTo.isEmpty || textBody.isEmpty)
-                Button("Call") {
-                    let (f, t) = (textFrom, textTo)
-                    Task { await carrier.placeCall(from: f, to: t) }
-                }
-                .disabled(textTo.isEmpty)
-            }
-        }
+    private func binding(_ vm: VirtualMachine) -> Binding<String> {
+        Binding(get: { edits[vm.id] ?? carrier.number(for: vm.id) ?? "" }, set: { edits[vm.id] = $0 })
     }
-
-    private var logSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Traffic").font(.headline).padding(10)
-            Table(carrier.messages.reversed()) {
-                TableColumn("Time") { m in Text(m.date, style: .time).foregroundStyle(.secondary) }.width(70)
-                TableColumn("Type") { m in Text(m.kind.rawValue) }.width(50)
-                TableColumn("") { m in Text(m.note == "from VM" ? "◀︎" : "▶︎").foregroundStyle(m.note == "from VM" ? .blue : .secondary) }.width(24)
-                TableColumn("From → To") { m in Text("\(m.from) → \(m.to)").lineLimit(1) }
-                TableColumn("Message") { m in Text(m.body).lineLimit(2) }
-                TableColumn("Status") { m in
-                    Text(m.note == "from VM" ? "Received" : (m.delivered ? "Delivered" : (m.note ?? "Not delivered")))
-                        .foregroundStyle(m.note == "from VM" ? .blue : (m.delivered ? .green : .secondary)).lineLimit(2)
-                }
-            }
-        }
-    }
-
-    private func binding(for vm: VirtualMachine) -> Binding<String> {
-        Binding(get: { numberEdits[vm.id] ?? carrier.number(for: vm.id) ?? "" },
-                set: { numberEdits[vm.id] = $0 })
-    }
-
     private func assign(_ vm: VirtualMachine) {
-        let value = numberEdits[vm.id] ?? carrier.number(for: vm.id) ?? carrier.suggestNumber()
-        do {
-            try carrier.assign(value, to: vm.id)
-            numberEdits[vm.id] = nil
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
+        let value = edits[vm.id] ?? carrier.number(for: vm.id) ?? carrier.suggestNumber()
+        do { try carrier.assign(value, to: vm.id); edits[vm.id] = nil; error = nil }
+        catch { self.error = error.localizedDescription }
     }
-
-    private func name(for vmID: UUID) -> String { store.machines.first { $0.id == vmID }?.name ?? "Unknown VM" }
 }
