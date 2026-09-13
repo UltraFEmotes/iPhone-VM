@@ -34,8 +34,11 @@ final class VMRunner: ObservableObject {
         if !simulatedSEP {
             machine += ",sep-fw=\(f("sep-firmware.img4")),sep-rom=\(f(entry.sepROM))"
         }
+        // Window title: "iPhone 11 - iOS 14.0 beta 5 (✓)"  (✓ jailbroken, ✗ stock). Shown via QEMU -name.
+        let title = "\(entry.deviceName) - iOS \(entry.ios) (\(vm.jailbroken ? "✓" : "✗"))"
         var args = [
             "-M", machine + identity,
+            "-name", title,
             // Multi-threaded TCG spreads the emulated cores over host threads (the guest CPU is emulated;
             // Inferno's Apple SoC can't use HVF). tb-size is kept modest to avoid adding host memory pressure.
             "-accel", "tcg,thread=multi,tb-size=256",
