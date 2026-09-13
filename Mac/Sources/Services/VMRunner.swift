@@ -42,6 +42,9 @@ final class VMRunner: ObservableObject {
             // Multi-threaded TCG spreads the emulated cores over host threads (the guest CPU is emulated;
             // Inferno's Apple SoC can't use HVF). tb-size is kept modest to avoid adding host memory pressure.
             "-accel", "tcg,thread=multi,tb-size=256",
+            // The MCA (I2S) audio device is wired to QEMU's audio system; give it a Mac backend so the
+            // guest's audio reaches the speakers. Without an -audiodev it silently falls back to "none".
+            "-audiodev", "coreaudio,id=snd0",
             "-kernel", f("kernelcache"),
             "-dtb", f("devicetree.im4p"),
             "-append", entry.bootArgs + (vm.jailbroken ? " launchd_unsecure_cache=1" : ""),
