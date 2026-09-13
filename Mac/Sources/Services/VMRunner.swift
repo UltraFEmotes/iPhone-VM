@@ -261,24 +261,25 @@ final class VMRunner: ObservableObject {
     /// (InfernoData/carrier/carrier-sqlite3), served by the companion at 192.168.178.1:8088 and pulled
     /// into the VM. iOS's sandbox refuses the Messages folder even to root without that entitlement.
     func setupCarrier() async {
-        note("setting up the carrier helper…")
+        note("setting up the carrier helper (installs carrier-sqlite3 + carrier-msg via apt)…")
+        // The companion serves the helper's apt repo over the VM's USB-tether network.
         let served = await Companion.run("bash /mnt/host/carrier/serve.sh").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard served == "HTTP 200" else {
-            note("the companion couldn't serve the helper (\(served)) — check InfernoData/carrier/carrier-sqlite3 exists")
+        guard served.contains("HTTP 200") else {
+            note("the companion isn't serving the carrier repo (\(served)). Start the VM's internet first (Send Trust Prompt).")
             return
         }
-        let tool = MessagesDelivery.sqliteTool, db = "/var/mobile/Library/SMS/sms.db"
+        // The VM has no curl, so install through apt. Isolate our repo so other repos can't fail the update.
         [
             "mount -uw /",
-            "mkdir -p /usr/local/bin && curl -s -o \(tool) http://192.168.178.1:8088/carrier-sqlite3 && chmod 755 \(tool) && echo CARRIER_TOOL_OK",
-            "echo CARRIER_TABLES; \(tool) \(db) '.tables' 2>&1 | head -5",
-            "echo CARRIER_SCHEMA_BEGIN; \(tool) \(db) '.schema handle' '.schema chat' '.schema message' '.schema chat_message_join' '.schema chat_handle_join' 2>&1; echo CARRIER_SCHEMA_END",
-            "echo CARRIER_TRIGGERS; \(tool) \(db) \"select name from sqlite_master where type='trigger';\" 2>&1; echo CARRIER_SETUP_DONE",
+            "mkdir -p /usr/local/bin /etc/apt/sources.list.d /tmp/cs /var/lib/dpkg; touch /var/lib/dpkg/status",
+            "mkdir -p /tmp/othersrc; mv /etc/apt/sources.list.d/*.list /tmp/othersrc/ 2>/dev/null",
+            "echo 'deb [trusted=yes] http://192.168.178.1:8088/repo/ ./' > /etc/apt/sources.list.d/carrier.list",
+            "rm -rf /var/lib/apt/lists/*",
+            "apt-get update",
+            "cd /tmp/cs && rm -f *.deb && apt-get download --allow-unauthenticated carrier-sqlite3 && dpkg -i --force-depends *.deb",
+            "test -x \(MessagesDelivery.helper) && echo CARRIER_SETUP_DONE || echo CARRIER_SETUP_FAILED",
         ].forEach(sendToSerial)
-        // Snapshot the Terminal log once the output is in, so it can be read outside the app.
-        try? await Task.sleep(nanoseconds: 40_000_000_000)
-        saveLog()
-        note("carrier setup finished — log saved")
+        note("installing… watch for CARRIER_SETUP_DONE below, then use the Carrier console (⇧⌘K)")
     }
 
     /// Sideloads an .ipa into /Applications of a running jailbroken VM, the way jailbreak tools do:

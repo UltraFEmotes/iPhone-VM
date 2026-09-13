@@ -22,6 +22,13 @@ struct CarrierConsoleView: View {
         }
         .frame(minWidth: 820, minHeight: 520)
         .onAppear { if me.isEmpty { me = carrier.lines.first?.number ?? "+15550100" } }
+        .task {
+            // Bring replies typed in a running VM's Messages back into these conversations.
+            while !Task.isCancelled {
+                await carrier.pollReplies()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
         .sheet(isPresented: $showNumbers) { NumbersSheet().environmentObject(store).environmentObject(carrier) }
     }
 
