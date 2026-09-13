@@ -293,9 +293,18 @@ final class VMRunner: ObservableObject {
             "rm -rf /var/lib/apt/lists/*",
             "apt-get update",
             "cd /tmp/cs && rm -f *.deb && apt-get download --allow-unauthenticated carrier-sqlite3 && dpkg -i --force-depends *.deb",
+            "nohup /usr/local/bin/carrier-agentd >/tmp/agent.log 2>&1 &",
             "test -x \(MessagesDelivery.helper) && echo CARRIER_SETUP_DONE || echo CARRIER_SETUP_FAILED",
         ].forEach(sendToSerial)
         note("installing… watch for CARRIER_SETUP_DONE below, then use the Carrier console (⇧⌘K)")
+    }
+
+    /// Starts the guest clipboard bridge installed by Set Up Carrier. It is safe to call more than once.
+    func startClipboardAgent() {
+        note("starting clipboard sync agent in the VM")
+        sendToSerial("test -x /usr/local/bin/carrier-agentd || echo CLIP_AGENT_MISSING")
+        sendToSerial("nohup /usr/local/bin/carrier-agentd >/tmp/agent.log 2>&1 &")
+        sendToSerial("echo CLIP_AGENT_STARTED")
     }
 
     /// Sideloads an .ipa into /Applications of a running jailbroken VM, the way jailbreak tools do:

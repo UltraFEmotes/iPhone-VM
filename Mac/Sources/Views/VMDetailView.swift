@@ -10,6 +10,7 @@ struct VMDetailView: View {
     @ObservedObject var runner: VMRunner
     @EnvironmentObject private var store: VMStore
     @EnvironmentObject private var registry: RunnerRegistry
+    @EnvironmentObject private var clipboard: ClipboardSyncService
     @State private var tab: Tab = .vm
     @State private var showingPhoneInfo = false
     @State private var showingSnapshots = false
@@ -138,6 +139,17 @@ struct VMDetailView: View {
                 action("Hold Power (3s)", help: "Long-press power, e.g. for the power-off slider") { runner.press(.power, holdMilliseconds: 3000) }
                 if vm.jailbroken {
                     action("Reboot iOS", help: "Reboot from inside the VM") { runner.sendToSerial("reboot") }
+                }
+            }
+            if vm.jailbroken {
+                Section("Clipboard") {
+                    Toggle("Clipboard Sync", isOn: Binding(
+                        get: { clipboard.isEnabled(for: vm.id) },
+                        set: { clipboard.setEnabled($0, for: vm, runner: runner) }
+                    ))
+                    Text(clipboard.status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

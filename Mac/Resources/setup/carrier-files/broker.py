@@ -71,6 +71,10 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/lines":
             with LOCK:
                 return self._send(200, {"lines": load()["lines"]})
+        if u.path == "/clip":
+            with LOCK:
+                db = load()
+                return self._send(200, db.get("clip", {"text": "", "seq": 0, "source": ""}))
         # static file
         rel = u.path.lstrip("/") or "chat.html"
         path = os.path.normpath(os.path.join(HERE, rel))
@@ -108,6 +112,16 @@ class H(BaseHTTPRequestHandler):
                 db["lines"] = body.get("lines", [])
                 save(db)
             return self._send(200, {"ok": True})
+        if u.path == "/clip":
+            with LOCK:
+                db = load()
+                cur = db.get("clip", {"text": "", "seq": 0, "source": ""})
+                # ignore an echo of what we already hold
+                if body.get("text", "") != cur["text"]:
+                    db["clip"] = {"text": body.get("text", ""), "seq": cur["seq"] + 1, "source": body.get("source", "")}
+                    save(db)
+                    return self._send(200, db["clip"])
+                return self._send(200, cur)
         if u.path == "/api/reset":
             with LOCK:
                 save({"messages": [], "lines": load()["lines"], "next": 1})
