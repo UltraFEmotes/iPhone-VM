@@ -38,5 +38,19 @@ Commands
 
 Inside a jailbroken VM the console is a root shell: try  mount -uw /  then apt.
 
+Headless / hosting (browser UI)
+-------------------------------
+    ./iphone-vm web 8080                          # local only: http://localhost:8080
+    ./iphone-vm web 8080 --host 0.0.0.0 --token SECRET   # reachable on your network
+
+Then open http://<server>:8080/?token=SECRET in any browser to install, create, set up and run VMs, use
+the console, and see the phone screen. Everything (install, new, setup, start) also works from the command
+line above — the web UI and CLI share the same VMs.
+
+The phone screen in the browser needs noVNC:  sudo apt install novnc websockify
+Without a token, --host 0.0.0.0 lets anyone on the network control your VMs, so always set one for hosting.
+The screen uses one extra port per running VM starting at 6080 (set INFERNO_VNC_WEB_BASE to change), which
+must also be reachable; the web UI links to them automatically.
+
 Credits and licenses: see README.md and THIRD_PARTY_NOTICES.md in the repository.
 https://github.com/UltraFEmotes/iPhone-VM

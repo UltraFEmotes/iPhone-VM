@@ -28,6 +28,10 @@ iphone-vm: an emulated iPhone on Linux, powered by ChefKiss Inferno (experimenta
   iphone-vm snapshot <vm> save|restore|delete <name>  |  snapshot <vm> list
   iphone-vm companion start|stop|status
   iphone-vm delete <vm> [--yes]
+  iphone-vm web [port] [--host HOST] [--token TOKEN]   headless: manage and run VMs from a browser
+
+For hosting, run 'web' with --host 0.0.0.0 and a --token; visit http://<server>:<port>/?token=<token>.
+The phone screen in the browser needs noVNC (Debian: sudo apt install novnc websockify).
 
 <vm> is a VM's name or the start of its ID. Data lives in $DATA
 EOF
@@ -237,6 +241,19 @@ case "${1:-help}" in
     press) shift; cmd_press "$@" ;;
     trust) shift; cmd_trust "$@" ;;
     snapshot) shift; cmd_snapshot "$@" ;;
+    web)
+        shift; port=8080
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --host) export INFERNO_WEB_HOST="${2:-}"; shift 2 ;;
+                --token) export INFERNO_WEB_TOKEN="${2:-}"; shift 2 ;;
+                *) port="$1"; shift ;;
+            esac
+        done
+        command -v python3 >/dev/null || die "python3 is required (run: iphone-vm install)"
+        export IPHONE_VM_BACKEND="$BACKEND" IPHONE_VM_MANIFEST="$MANIFEST"
+        exec python3 "$HERE/webui.py" "$port"
+        ;;
     companion) shift; exec "$BACKEND/companion.sh" "$@" ;;
     delete|rm) shift; cmd_delete "$@" ;;
     help|-h|--help) usage ;;
