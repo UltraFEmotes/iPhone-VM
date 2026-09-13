@@ -1,0 +1,7 @@
+[Unit]
+Description=Inferno iPhone reverse tethering
+After=network.target
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/local/sbin/iphone-tether.sh

@@ -1,0 +1,101 @@
+<Window x:Class="InfernoWin.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="InfernoWin" Width="1000" Height="640" MinWidth="820" MinHeight="520">
+    <DockPanel>
+        <!-- VM list -->
+        <DockPanel DockPanel.Dock="Left" Width="240" Background="#F3F3F3">
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="8">
+                <Button Content="New VM…" Padding="10,3" Click="NewVm_Click"/>
+                <Button x:Name="DeleteButton" Content="Delete" Padding="10,3" Margin="6,0,0,0" Click="Delete_Click"/>
+                <Button Content="Setup…" Padding="10,3" Margin="6,0,0,0" Click="FirstRun_Click" ToolTip="Re-run the WSL setup"/>
+            </StackPanel>
+            <ListBox x:Name="VmList" BorderThickness="0" Background="Transparent" SelectionChanged="VmList_SelectionChanged">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="4,6">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding State}" Foreground="Gray" FontSize="11"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <!-- Detail -->
+        <Grid>
+            <TextBlock x:Name="EmptyText" Text="Create a VM with New VM…" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray"/>
+            <DockPanel x:Name="Detail" Visibility="Collapsed" Margin="12">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock x:Name="VmTitle" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="VmSubtitle" Foreground="Gray"/>
+                </StackPanel>
+                <TabControl x:Name="Tabs">
+                    <TabItem Header="Setup" x:Name="SetupTab">
+                        <DockPanel Margin="8">
+                            <StackPanel DockPanel.Dock="Left" Width="300" Margin="0,0,10,0">
+                                <ItemsControl x:Name="StepsList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,3">
+                                                <TextBlock Text="{Binding Icon}" Width="22" FontSize="13"/>
+                                                <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Width="270"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <ProgressBar x:Name="SetupProgress" Height="8" Margin="0,10,0,0" Visibility="Collapsed"/>
+                                <Button x:Name="SetupButton" Content="Set Up" Margin="0,12,0,0" Padding="10,4" Click="SetUp_Click"/>
+                                <TextBlock TextWrapping="Wrap" Foreground="Gray" FontSize="11" Margin="0,8,0,0"
+                                           Text="Setup resumes where it stopped if you close the app or it fails."/>
+                            </StackPanel>
+                            <TextBox x:Name="SetupLog" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     Background="#111" Foreground="#ddd"/>
+                        </DockPanel>
+                    </TabItem>
+
+                    <TabItem Header="Device" x:Name="DeviceTab">
+                        <StackPanel Margin="16" HorizontalAlignment="Left">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="StartButton" Content="Start" Width="90" Click="Start_Click"/>
+                                <Button x:Name="StopButton" Content="Stop" Width="90" Margin="8,0,0,0" Click="Stop_Click"/>
+                                <TextBlock x:Name="RunStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Text="The phone screen opens in its own window (shown by WSLg)." Foreground="Gray" Margin="0,6,0,14"/>
+
+                            <TextBlock Text="Buttons" FontWeight="SemiBold"/>
+                            <WrapPanel x:Name="ButtonsPanel" Margin="0,4,0,14"/>
+
+                            <TextBlock Text="Internet" FontWeight="SemiBold"/>
+                            <WrapPanel Margin="0,4,0,14">
+                                <Button Content="Send Trust Prompt" Padding="10,3" Click="Trust_Click"
+                                        ToolTip="Ask iOS to trust the companion (needed once for USB internet)"/>
+                                <Button Content="Restart Internet" Padding="10,3" Margin="6,0,0,0" Click="RestartInternet_Click"/>
+                            </WrapPanel>
+
+                            <TextBlock x:Name="JailbreakHeader" Text="Jailbreak" FontWeight="SemiBold"/>
+                            <WrapPanel x:Name="JailbreakPanel" Margin="0,4,0,0">
+                                <Button Content="Make System Writable" Padding="10,3" Click="Writable_Click"/>
+                                <Button Content="Install Zebra" Padding="10,3" Margin="6,0,0,0" Click="Zebra_Click"/>
+                                <Button Content="Respring" Padding="10,3" Margin="6,0,0,0" Click="Respring_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem Header="Console" x:Name="ConsoleTab">
+                        <DockPanel Margin="8">
+                            <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                                <Button DockPanel.Dock="Right" Content="Send" Width="70" Margin="6,0,0,0" Click="Send_Click"/>
+                                <TextBox x:Name="ConsoleInput" FontFamily="Consolas" KeyDown="ConsoleInput_KeyDown"/>
+                            </DockPanel>
+                            <TextBox x:Name="ConsoleLog" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     Background="#111" Foreground="#ddd"/>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>

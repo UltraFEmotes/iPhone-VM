@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- Lets the app compile on macOS/Linux; it only runs on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyTitle>InfernoWin</AssemblyTitle>
+    <Product>InfernoWin</Product>
+    <Copyright>Personal use. Runs ChefKiss Inferno (GPL/AGPL) inside WSL2.</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same device/iOS list as InfernoMac. -->
+    <EmbeddedResource Include="..\..\Mac\Resources\manifest.json" LogicalName="InfernoWin.manifest.json" />
+    <!-- The bash backend, copied into WSL on first run. -->
+    <None Include="..\wsl\**\*" LinkBase="wsl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
