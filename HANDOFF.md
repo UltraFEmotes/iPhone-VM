@@ -308,6 +308,68 @@ A modem boot also needs `/System/Library/Caches/com.apple.factorydata` (created 
 - 2026-09-13: added `Linux/iphone-vm` (command-line version on the same bash backend as InfernoWin), release v0.2.0-experimental.
   Tested on Debian arm64 (in the Mac companion) up to setup; install/setup/start not yet run end-to-end on Linux.
   The iPhone VM is software-emulated (TCG) on every platform. Inferno has no hypervisor support for t8030/s8000.
+- 2026-09-13: `Linux/iphone-vm` now installs on **Arch** as well as Debian/Ubuntu. `common.sh` gained `pkg_kind`
+  (reads /etc/os-release, falls back to which binary exists) and `novnc_hint`; `install.sh` has one package list
+  per distro and fails cleanly on anything else. Arch specifics: headers live in the library packages (except
+  `glib2-devel`), SDL 2 is `sdl2-compat`, venv is inside `python`, and **lzfse isn't packaged at all** — a new
+  `lzfse` step builds it from https://github.com/lzfse/lzfse into /usr/local when `cc -llzfse` can't already link
+  (so Debian and AUR installs skip it). It needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` (CMake 4 rejects lzfse's
+  `cmake_minimum_required(2.8.6)`) and is built static + PIC so QEMU's PIE link works with no ld.so.conf entry.
+  No `pacman -Sy` (partial upgrades break Arch) — on a stale DB it tells the user to run `pacman -Syu`.
+  Also: `libattr1-dev`/`attr` added to both lists (`--enable-virtfs` hard-requires libattr on Linux, and it was
+  missing from the Debian list), seed.iso falls back to xorriso/mkisofs if `cloud-localds` is absent, companion.sh
+  prints the `usermod -aG kvm` hint, and webui.py only offers the screen when websockify is on PATH too (Arch
+  packages it separately from noVNC). Verified on Arch: all 33 package names resolve in core/extra, the lzfse
+  build + PIE link works, the pacman branch is taken. NOT yet run: the full install (needs sudo, 20-60 min).
+- 2026-09-14: `scripts/make_linux_tarball.sh` builds iphone-vm-linux.tar.gz (CLI + webui + backend/ +
+  manifest.json, the layout Linux/iphone-vm expects outside a checkout); it refuses to ship a backend that
+  still refers to ../Windows/wsl. Verified by unpacking elsewhere and running versions/help.
+  **Patch step fixed**: Debian's apfs-dkms 0.3.0 aborts the transaction on an *in-place* write into the
+  restored dyld shared cache (a 4-byte identical-bytes rewrite is enough; creating a new file is fine),
+  and apfs_transaction_abort -> apfs_force_readonly then forces the whole container read-only, which is
+  why InfernoFSPatcher died with "seek failed ... out of range". Upstream linux-apfs-rw v0.3.21 writes it
+  happily. companion_provision.sh now removes apfs-dkms and builds v0.3.21 from source, verifying with
+  modinfo and recording /var/lib/inferno-apfs-version. **The iPhone 11 / 14.0b5 VM on this Arch box
+  reached state=ready** (all 9 steps); `iphone-vm start` still unrun on Linux.
+  Distro lists: openSUSE names checked against repology — gnutls-devel -> libgnutls-devel and
+  vde2-devel -> libvdeplug-devel were wrong; xorriso/libisoburn added to every list so the seed-ISO step
+  has a fallback where cloud-localds isn't packaged. Only Arch and Debian are actually verified against
+  real package data; dnf/zypper/apk/emerge/xbps have never been run (no containers on this box).
+- 2026-09-14: **the Linux restore works** — the stall was the USB link. Over the unix socket
+  (/tmp/InfernoUSBRemote) the bulk ASR transfer dies partway through with the phone receiving nothing;
+  over TCP it completes. `usb_tcp_port` in common.sh now defaults to **on** (127.0.0.1:7250);
+  INFERNO_USB_TCP=0 goes back to the unix socket, any number picks another port. The companion binds
+  (`usb-tcp-remote,conn-type=ipv4,conn-addr=,conn-port=`) and the phone dials
+  (`-M t8030,usb-conn-type=ipv4,...`); start_vm.sh reads $DATA/companion.usbmode so the phone always uses
+  the port the *running* companion bound, whatever the environment says.
+  install.sh now covers **7 package managers** (apt, pacman, dnf, zypper, apk, emerge, xbps) via pkg_kind
+  on ID/ID_LIKE. `pkg_install` tries the whole list, then falls back to one package at a time and *names
+  what it skipped* rather than failing — package names drift per release and only Arch/Debian are verified
+  against real package data. Alpine also pulls bash/coreutils/GNU grep+sed/procps-ng, since these scripts
+  use GNU-only options (tail --pid, df --output, du -B1, sed -u) busybox lacks.
+  **Now blocked in `patch`**: InfernoFSPatcher builds the dyld patches, then "Applying changes..." throws
+  `seek failed: 32044808 direction 0; out of range` (src/parse.hpp seek_stream — seekg set failbit). The
+  companion's kernel log shows `APFS (2fg): aborting transaction` *before* that, so the out-of-tree APFS
+  driver's experimental write support is aborting and the stream goes bad. root.prepatch is kept, and
+  steps.done keeps `restore`, so retrying only repeats the patch step. Not yet diagnosed further: whether
+  the abort is ENOSPC inside the APFS container (it is copy-on-write, and the patch rewrites a 1.5 GB
+  dyld cache in place) or a driver limitation.
+- 2026-09-14: Linux restore debugging. `setup` now streams the phone's serial console ([phone]) and the
+  companion's kernel log ([companion]), and the restore heartbeat reports real write I/O from
+  /proc/<pid>/io **wchar** (not du of the disk image, which stops growing once allocated, and not
+  write_bytes, which is 0 for buffered writes since writeback is charged to kernel threads); it calls out
+  a stall after 5 write-less minutes. The restore now also gets a display (the ramdisk's progress bar),
+  and INFERNO_DISPLAY=auto picks gtk only when DISPLAY/WAYLAND_DISPLAY exists, so headless is safe.
+  Opt-in `INFERNO_USB_TCP=1|<port>` (default 7250) moves the phone<->companion USB link from
+  /tmp/InfernoUSBRemote to TCP on 127.0.0.1 — companion binds (`usb-tcp-remote,conn-type=ipv4,...`),
+  phone dials (`-M t8030,usb-conn-type=ipv4,...`); the mode is recorded in $DATA/companion.usbmode and a
+  mismatch is warned about, since a running companion keeps the link it started with.
+  **Open bug:** on this Arch box the restore stalls twice at the same point — idevicerestore reaches 100%,
+  the phone's console goes silent after `ASR RESTORE PROGRESS: 4%`, no disk writes at all, CPU drops from
+  ~230% to ~43%. Ruled out: disk/RAM/OOM, fragmentation, the ASR-timeout fix (idevicerestore 60192e9 is
+  newer than upstream 405fcd1), the model patch, and the qemu command line (compared flag by flag against
+  the guide's: machine opts, research kernelcache, boot args, smp/mem, all 7 NVMe nsid/nstype pairs all
+  match; only -serial mon:stdio vs -monitor none -serial stdio differs). Suspect the USB bridge.
 - 2026-09-13: added `Linux/webui.py` + `iphone-vm web <port>` (browser UI for headless/hosting), release v0.3.0-experimental.
   Shares the CLI's data dir; SSE serial console, VNC screen via websockify+noVNC (one port per VM from 6080).
   start_vm.sh now honours INFERNO_DISPLAY (vnc=/none) and INFERNO_SERIAL (tcp:). Tested to the API level in the

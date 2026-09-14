@@ -17,7 +17,7 @@ All the hard emulation work is theirs. This project automates the setup their
 |---|---|---|
 | **InfernoMac** (`Mac/`) | macOS on Apple Silicon | Works on the author's Mac with iPhone 11 / iOS 14.0 beta 5 |
 | **InfernoWin** (`Windows/InfernoWin`, `Windows/wsl`) | Windows 10/11 with WSL2 | Builds; never run on Windows |
-| **iphone-vm** (`Linux/`) | Linux (Debian/Ubuntu, x86_64 or arm64) | Command-line tool; tested on Debian, full install not yet run |
+| **iphone-vm** (`Linux/`) | Linux (Arch or Debian/Ubuntu, x86_64 or arm64) | Command-line tool; tested on Debian, full install not yet run |
 | **Native Windows build** (`Windows/ci`) | Windows without WSL | Inferno compiles for Windows (MSYS2); only a smoke test so far |
 
 ## Features (InfernoMac)
@@ -57,7 +57,9 @@ Download **InfernoWin** from [Releases](../../releases) and follow the `README.t
 
 ### Linux
 
-Download **iphone-vm-linux.tar.gz** from [Releases](../../releases), or use `Linux/iphone-vm` from a clone:
+Works on Arch and on Debian/Ubuntu; `install` picks pacman or apt for you (on Arch it also builds lzfse,
+which Arch doesn't package, and needs no AUR helper). Download **iphone-vm-linux.tar.gz** from
+[Releases](../../releases), or use `Linux/iphone-vm` from a clone:
 
 ```
 ./iphone-vm install        # builds Inferno + the companion VM (asks for sudo)
@@ -70,7 +72,8 @@ Run `./iphone-vm help` for all commands (buttons, trust prompt, snapshots…). I
 InfernoWin.
 
 **Headless / hosting:** `./iphone-vm web 8080 --host 0.0.0.0 --token SECRET` serves a browser UI where you install,
-create, set up and run VMs, use the console and see the phone screen (noVNC: `sudo apt install novnc websockify`).
+create, set up and run VMs, use the console and see the phone screen (noVNC: `sudo apt install novnc websockify`,
+or `yay -S novnc python-websockify` on Arch).
 Always set a token when binding to `0.0.0.0`. The CLI and web UI share the same VMs.
 
 ### Speed

@@ -20,6 +20,11 @@ machine="$(e machine),trustcache=$(f trustcache),kaslr-off=true"
 if [ "$SEPSIM" != true ] || [ -f "$(f root_ticket.der)" ]; then machine+=",ticket=$(f root_ticket.der)"; fi
 [ "$SEPSIM" = true ] || machine+=",sep-fw=$(f sep-firmware.img4),sep-rom=$(f "$(e sepROM)")"
 
+# The phone dials the companion. Prefer the port the running companion actually bound (it keeps the link
+# it started with) over what the environment asks for now, so the two can never disagree.
+USB_TCP=$(cat "$DATA/companion.usbmode" 2>/dev/null || usb_tcp_port)
+[ -n "$USB_TCP" ] && machine+=",usb-conn-type=ipv4,usb-conn-addr=127.0.0.1,usb-conn-port=$USB_TCP"
+
 bootargs="$(e bootArgs)"
 [ "$JB" = 1 ] && bootargs+=" launchd_unsecure_cache=1"
 
@@ -31,18 +36,21 @@ case "${INFERNO_SERIAL:-stdio}" in
     *) args+=(-serial stdio) ;;
 esac
 [ "$QMP" != 0 ] && args+=(-qmp "tcp:127.0.0.1:$QMP,server=on,wait=off")
-# Display: a VNC display for the web server, a GTK window on a desktop, or none during restore.
-if [ "$MODE" = restore ]; then
-    args+=(-display none -initrd "$(f ramdisk_erase.dmg)")
-elif [ -n "${INFERNO_DISPLAY:-}" ]; then
-    case "$INFERNO_DISPLAY" in
-        vnc=*) args+=(-vnc "${INFERNO_DISPLAY#vnc=}") ;;
-        none) args+=(-display none) ;;
-        *) args+=(-display "$INFERNO_DISPLAY") ;;
-    esac
-else
-    args+=(-display gtk,zoom-to-fit=on,show-cursor=on)
-fi
+# Display: the web server asks for VNC, a desktop gets a window, a headless box gets nothing. The restore
+# ramdisk draws a progress bar on the phone's screen, which is often the only visible sign it is still
+# alive, so restore gets a display too — INFERNO_DISPLAY=none brings the old silent behaviour back.
+[ "$MODE" = restore ] && args+=(-initrd "$(f ramdisk_erase.dmg)")
+case "${INFERNO_DISPLAY:-auto}" in
+    vnc=*) args+=(-vnc "${INFERNO_DISPLAY#vnc=}") ;;
+    none) args+=(-display none) ;;
+    auto)
+        if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+            args+=(-display gtk,zoom-to-fit=on,show-cursor=on)
+        else
+            args+=(-display none)
+        fi ;;
+    *) args+=(-display "$INFERNO_DISPLAY") ;;
+esac
 if [ "$SEPSIM" != true ]; then
     args+=(-drive "file=$(f sep_nvram),if=pflash,format=raw" -drive "file=$(f sep_ssc),if=pflash,format=raw")
 fi

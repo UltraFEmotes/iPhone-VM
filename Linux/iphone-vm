@@ -31,7 +31,7 @@ iphone-vm: an emulated iPhone on Linux, powered by ChefKiss Inferno (experimenta
   iphone-vm web [port] [--host HOST] [--token TOKEN]   headless: manage and run VMs from a browser
 
 For hosting, run 'web' with --host 0.0.0.0 and a --token; visit http://<server>:<port>/?token=<token>.
-The phone screen in the browser needs noVNC (Debian: sudo apt install novnc websockify).
+The phone screen in the browser needs noVNC and websockify ($(novnc_hint)).
 
 <vm> is a VM's name or the start of its ID. Data lives in $DATA
 EOF

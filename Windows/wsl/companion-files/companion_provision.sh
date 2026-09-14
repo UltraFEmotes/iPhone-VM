@@ -12,10 +12,30 @@ sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git autoconf automake libtool pkg-config \
     libssl-dev libusb-1.0-0-dev libcurl4-openssl-dev libreadline-dev libzip-dev zlib1g-dev python3-dev cython3 udev \
     dnsmasq iptables cmake python3 xz-utils
-# Windows patches the iPhone disk inside the companion with the Linux APFS driver; macOS does it natively
-# (InfernoMac passes INFERNO_SKIP_APFS=1). Headers match the companion's own architecture.
+# Windows and Linux patch the iPhone disk inside the companion with the Linux APFS driver; macOS does it
+# natively (InfernoMac passes INFERNO_SKIP_APFS=1). Headers match the companion's own architecture.
+#
+# The driver is built from upstream rather than taken from Debian, whose apfs-dkms is 0.3.0: with that
+# version an in-place write into the restored dyld shared cache aborts the transaction, which forces the
+# whole container read-only (apfs_transaction_abort -> apfs_force_readonly) and makes the patcher fail
+# with "seek failed ... out of range". v0.3.21 writes the same file without complaint.
+APFS_VERSION=v0.3.21
 if [ "${INFERNO_SKIP_APFS:-0}" != 1 ]; then
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-headers-$(dpkg --print-architecture)" apfs-dkms
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-headers-$(dpkg --print-architecture)"
+    if [ "$(cat /var/lib/inferno-apfs-version 2>/dev/null)" != "$APFS_VERSION" ]; then
+        # Drop Debian's module so the upstream one is the only apfs.ko modprobe can find.
+        sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y apfs-dkms 2>/dev/null || true
+        rm -rf ~/linux-apfs-rw
+        git clone -q --depth 1 -b "$APFS_VERSION" https://github.com/linux-apfs/linux-apfs-rw ~/linux-apfs-rw
+        (cd ~/linux-apfs-rw && make -j"$(nproc)" >/dev/null)
+        sudo mkdir -p "/lib/modules/$(uname -r)/updates"
+        sudo cp ~/linux-apfs-rw/apfs.ko "/lib/modules/$(uname -r)/updates/apfs.ko"
+        sudo rm -f "/lib/modules/$(uname -r)/updates/dkms/apfs.ko"
+        sudo depmod -a
+        /sbin/modinfo apfs | grep -q "$APFS_VERSION" || { echo "APFS driver $APFS_VERSION did not install"; exit 1; }
+        echo "$APFS_VERSION" | sudo tee /var/lib/inferno-apfs-version >/dev/null
+        echo "built APFS driver $APFS_VERSION"
+    fi
 fi
 
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig/
