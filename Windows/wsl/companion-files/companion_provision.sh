@@ -35,6 +35,7 @@ apt_install build-essential git autoconf automake libtool pkg-config \
 # with "seek failed ... out of range". v0.3.21 writes the same file without complaint.
 APFS_VERSION=v0.3.21
 if [ "${INFERNO_SKIP_APFS:-0}" != 1 ]; then
+    apt_install dkms
     apt_install_one_of "linux-headers-$(uname -r)" "linux-headers-$(dpkg --print-architecture)"
     if [ "$(cat /var/lib/inferno-apfs-version 2>/dev/null)" != "$APFS_VERSION" ]; then
         # Drop Debian's module so the upstream one is the only apfs.ko modprobe can find.

@@ -49,6 +49,7 @@ apt)
         libncurses-dev libpixman-1-dev libsnappy-dev vde2 zstd libzstd-dev libgnutls28-dev libgmp-dev \
         lzfse liblzfse-dev libgtk-3-dev libsdl2-dev git cmake python3 python3-venv curl wget unzip \
         libssl-dev libattr1-dev cloud-image-utils xorriso openssh-client xz-utils
+    # Debian and Ubuntu disagree on the libjpeg development package's name.
     apt_install_one_of libjpeg-turbo8-dev libjpeg62-turbo-dev
     ;;
 pacman)
@@ -142,6 +143,8 @@ if ! lzfse_ok; then
     rm -rf lzfse-src
     lzfse_ok || fail "lzfse did not build — Inferno can't read the iOS images without it"
 fi
+# Decides the configure flag below. A compile+link probe, not pkg-config: the source build above
+# installs liblzfse.a and lzfse.h with no .pc file, so pkg-config would wrongly report it missing.
 LZFSE_FLAG=--disable-lzfse
 if lzfse_ok; then
     LZFSE_FLAG=--enable-lzfse

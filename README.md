@@ -17,7 +17,7 @@ All the hard emulation work is theirs. This project automates the setup their
 |---|---|---|
 | **InfernoMac** (`Mac/`) | macOS on Apple Silicon | Works on the author's Mac with iPhone 11 / iOS 14.0 beta 5 |
 | **InfernoWin** (`Windows/InfernoWin`, `Windows/wsl`) | Windows 10/11 with WSL2 | Builds; never run on Windows |
-| **iphone-vm** (`Linux/`) | Linux (Arch, Debian/Ubuntu, x86_64 or arm64) | Command-line and browser UI; experimental, distro/hardware matrix still limited |
+| **iphone-vm** (`Linux/`) | Linux (Arch, Debian/Ubuntu, Fedora, openSUSE, Alpine, Gentoo, Void; x86_64 or arm64) | Command-line and browser UI; restores, patches and boots on Arch, other distros unverified |
 | **Native Windows build** (`Windows/ci`) | Windows without WSL | Inferno compiles for Windows (MSYS2); only a smoke test so far |
 
 ## Features (InfernoMac)
