@@ -1,0 +1,32 @@
+import SwiftUI
+
+struct EmptyStateView: View {
+    let title: String
+    let systemImage: String
+    let message: String?
+
+    init(_ title: String, systemImage: String, message: String? = nil) {
+        self.title = title
+        self.systemImage = systemImage
+        self.message = message
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 42))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.headline)
+            if let message {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}

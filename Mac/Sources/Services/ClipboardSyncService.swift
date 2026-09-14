@@ -20,13 +20,12 @@ final class ClipboardSyncService: ObservableObject {
             enabledVMs.insert(vm.id)
             status = "Starting..."
             Task {
-                let served = await Companion.run("bash /mnt/host/carrier/serve.sh").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard served.contains("HTTP 200") else {
+                guard await CarrierBrokerClient.ensureReady() else {
                     await MainActor.run {
                         self.enabledVMs.remove(vm.id)
                         self.status = "Broker unavailable"
                     }
-                    runner.note("clipboard sync needs the carrier broker (\(served)); send the Trust prompt and run Set Up Carrier first")
+                    runner.note("clipboard sync needs the carrier broker; send the Trust prompt and run Set Up Carrier first")
                     return
                 }
                 runner.startClipboardAgent()
@@ -96,20 +95,11 @@ final class ClipboardSyncService: ObservableObject {
     }
 
     private func fetchClip() async -> Clip? {
-        await request("curl -s -m 3 http://127.0.0.1:8088/clip")
+        await CarrierBrokerClient.get("/clip", as: Clip.self)
     }
 
     private func postClip(text: String, source: String) async -> Clip? {
-        guard let data = try? JSONEncoder().encode(ClipPost(text: text, source: source)),
-              let json = String(data: data, encoding: .utf8) else { return nil }
-        return await request("curl -s -m 3 -H 'Content-Type: application/json' -XPOST http://127.0.0.1:8088/clip --data-binary \(Shell.quote(json))")
-    }
-
-    private func request(_ command: String) async -> Clip? {
-        let out = await Companion.run(command).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = out.data(using: .utf8),
-              let clip = try? JSONDecoder().decode(Clip.self, from: data) else { return nil }
-        return clip
+        await CarrierBrokerClient.post("/clip", body: ClipPost(text: text, source: source), as: Clip.self)
     }
 
     private struct Clip: Decodable {

@@ -1,5 +1,15 @@
 import SwiftUI
 
+private struct CompatibleGroupedFormStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 13.0, *) {
+            content.formStyle(.grouped)
+        } else {
+            content
+        }
+    }
+}
+
 struct VMDetailView: View {
     enum Tab: String, CaseIterable { case vm = "VM", terminal = "Terminal", files = "Files", jailbreak = "Jailbreak", misc = "Misc" }
 
@@ -11,6 +21,7 @@ struct VMDetailView: View {
     @EnvironmentObject private var store: VMStore
     @EnvironmentObject private var registry: RunnerRegistry
     @EnvironmentObject private var clipboard: ClipboardSyncService
+    @EnvironmentObject private var carrier: CarrierStore
     @State private var tab: Tab = .vm
     @State private var showingPhoneInfo = false
     @State private var showingSnapshots = false
@@ -108,7 +119,7 @@ struct VMDetailView: View {
             }
             Section("Carrier (needs internet)") {
                 action("Set Up Carrier", help: "Installs the helper that puts Carrier Console texts into Messages") {
-                    Task { await runner.setupCarrier() }
+                    Task { await runner.setupCarrier(number: ensureCarrierNumber()) }
                 }
             }
             Section("Package Managers (needs internet)") {
@@ -117,7 +128,7 @@ struct VMDetailView: View {
                 }
             }
         }
-        .formStyle(.grouped)
+        .modifier(CompatibleGroupedFormStyle())
         .disabled(!runner.isRunning)
         .overlay { if !runner.isRunning { Text("Start the VM to use these.").foregroundStyle(.secondary) } }
     }
@@ -126,11 +137,11 @@ struct VMDetailView: View {
         Form {
             Section("Internet") {
                 action("Send Trust Prompt", help: "Ask iOS to trust the companion (needed once for USB internet)", disabled: !runner.isRunning) {
-                    Task { await runner.sendTrustPrompt() }
+                    Task { await runner.sendTrustPrompt(carrierNumber: vm.jailbroken ? ensureCarrierNumber() : nil) }
                 }
                 if vm.jailbroken {
                     action("Repair Carrier", help: "Restart the broker and reinstall the in-VM carrier helpers", disabled: !runner.isRunning) {
-                        Task { await runner.setupCarrier() }
+                        Task { await runner.setupCarrier(number: ensureCarrierNumber()) }
                     }
                 }
                 action("Restart Internet", help: "Restart usbmuxd, tethering and DHCP on the companion", disabled: !runner.isRunning) {
@@ -155,11 +166,7 @@ struct VMDetailView: View {
                 Text(currentGraphicsMode.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if !currentGraphicsMode.isImplemented {
-                    Text("This saves the experiment choice but falls back to Software Framebuffer until the emulator engine supports it.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Changes apply the next time this VM starts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -173,11 +180,12 @@ struct VMDetailView: View {
                 Text(currentPerformanceMode.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Changes apply the next time this VM starts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("Experimental Audio") {
+            Section("Audio") {
                 Picker("Mode", selection: audioModeBinding) {
                     ForEach(VirtualMachine.AudioMode.allCases) { mode in
                         Text(mode.title).tag(mode)
@@ -186,8 +194,9 @@ struct VMDetailView: View {
                 Text(currentAudioMode.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if currentAudioMode == .aopCoreAudio {
-                    Text("This can trigger iOS 14 SpringBoard/kernel instability while the AOP service is incomplete.")
+                    Text("Still experimental: this avoids the known low-power mic path, but AOP itself is incomplete.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -208,7 +217,7 @@ struct VMDetailView: View {
                 }
             }
         }
-        .formStyle(.grouped)
+        .modifier(CompatibleGroupedFormStyle())
     }
 
     private var currentVM: VirtualMachine {
@@ -274,15 +283,26 @@ struct VMDetailView: View {
 
     /// A row that runs an action and jumps to the Terminal so the output is visible.
     private func action(_ title: String, help: String, disabled: Bool = false, _ perform: @escaping () -> Void) -> some View {
-        HStack {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading) {
                 Text(title)
-                Text(help).font(.caption).foregroundStyle(.secondary)
+                Text(help)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer()
-            Button("Run") { perform(); tab = .terminal }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            Button { perform(); tab = .terminal } label: {
+                Text("Run")
+                    .frame(minWidth: 40)
+            }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
                 .disabled(disabled)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var statusText: String {
@@ -295,5 +315,19 @@ struct VMDetailView: View {
     private func reloadRunnerIfStopped() {
         guard let saved = store.machines.first(where: { $0.id == vm.id }) else { return }
         registry.refresh(saved, entry: entry)
+    }
+
+    private func ensureCarrierNumber() -> String? {
+        if let number = carrier.number(for: vm.id) {
+            return number
+        }
+        let suggested = carrier.suggestNumber()
+        do {
+            try carrier.assign(suggested, to: vm.id)
+            return suggested
+        } catch {
+            runner.note("could not assign carrier number: \(error.localizedDescription)")
+            return nil
+        }
     }
 }

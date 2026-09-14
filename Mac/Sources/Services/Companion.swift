@@ -2,11 +2,19 @@ import Foundation
 
 /// Talks to the companion Debian VM (SSH on localhost:32222), which owns the iPhone VM's USB link.
 enum Companion {
-    private static var sshArgs: [String] {
+    private static var sshOptions: [String] {
         ["-i", InfernoPaths.dataRoot.appendingPathComponent("companion_key").path, "-p", "32222",
          "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
-         "-o", "ConnectTimeout=8", "inferno@localhost"]
+         "-o", "ConnectTimeout=8"]
     }
+    private static let sshDestination = "inferno@localhost"
+    private static var sshArgs: [String] {
+        sshOptions + [sshDestination]
+    }
+
+    static let carrierLocalPort = 18088
+    static var carrierBaseURL: URL { URL(string: "http://127.0.0.1:\(carrierLocalPort)")! }
+    @MainActor private static var carrierTunnel: Process?
 
     /// Runs one command on the companion and returns its combined output (never throws for a non-zero exit).
     static func run(_ command: String) async -> String {
@@ -16,6 +24,54 @@ enum Companion {
             return failure.tail
         } catch {
             return error.localizedDescription
+        }
+    }
+
+    /// Starts the companion broker and keeps a local Mac URL forwarded to it.
+    @MainActor
+    static func ensureCarrierBroker() async -> Bool {
+        if await localCarrierBrokerIsHealthy() { return true }
+        let served = await run("bash /mnt/host/carrier/serve.sh").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard served.contains("HTTP 200") else { return false }
+        if await localCarrierBrokerIsHealthy() { return true }
+        startCarrierTunnel()
+        for _ in 0..<20 {
+            if await localCarrierBrokerIsHealthy() { return true }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return false
+    }
+
+    @MainActor
+    private static func startCarrierTunnel() {
+        if carrierTunnel?.isRunning == true { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        p.arguments = sshOptions + ["-N", "-L", "127.0.0.1:\(carrierLocalPort):127.0.0.1:8088", sshDestination]
+        p.standardOutput = Pipe()
+        p.standardError = Pipe()
+        p.terminationHandler = { proc in
+            Task { @MainActor in
+                if carrierTunnel === proc {
+                    carrierTunnel = nil
+                }
+            }
+        }
+        do {
+            try p.run()
+            carrierTunnel = p
+        } catch {
+            carrierTunnel = nil
+        }
+    }
+
+    private static func localCarrierBrokerIsHealthy() async -> Bool {
+        do {
+            let url = carrierBaseURL.appendingPathComponent("api/health").absoluteString
+            let out = try await Shell.run("/usr/bin/curl", ["-fsS", "-m", "2", url])
+            return out.contains("\"ok\"")
+        } catch {
+            return false
         }
     }
 

@@ -2,7 +2,7 @@ name: InfernoMac
 options:
   bundleIdPrefix: com.infernophone.mac
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "12.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -37,7 +37,7 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: InfernoMac
-        LSMinimumSystemVersion: "14.0"
+        LSMinimumSystemVersion: "12.0"
         NSHumanReadableCopyright: "Personal use. Runs ChefKiss Inferno (GPL/AGPL)."
     entitlements:
       path: Sources/InfernoMac.entitlements

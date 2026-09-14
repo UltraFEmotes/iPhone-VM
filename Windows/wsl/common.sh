@@ -76,6 +76,33 @@ novnc_hint() {
 step() { echo "STEP:$1"; }
 fail() { echo "FAIL:$*"; exit 1; }
 
+pkg_available() { apt-cache show "$1" >/dev/null 2>&1; }
+apt_install() {
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+}
+apt_install_one_of() {
+    local pkg
+    for pkg in "$@"; do
+        if pkg_available "$pkg"; then
+            apt_install "$pkg"
+            return 0
+        fi
+    done
+    fail "none of these packages is available: $*"
+}
+
+# Pick a backend supported by the engine and the current Linux audio session.
+qemu_audio_backend() {
+    local qemu="$1" help backend
+    help=$("$qemu" -audiodev help 2>&1 || true)
+    for backend in pipewire pa alsa sdl oss; do
+        if grep -Eq "(^|[[:space:],])$backend([[:space:],:]|$)" <<< "$help"; then
+            echo "$backend"
+            return 0
+        fi
+    done
+}
+
 # json <file> <dotted.key> — prints one value from a JSON file ("" when missing; booleans as true/false).
 json() {
     python3 - "$1" "$2" <<'EOF'

@@ -43,7 +43,7 @@ struct EnvironmentSetupView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .background(Color(nsColor: .textBackgroundColor))
-                .onChange(of: log) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: log) { _ in proxy.scrollTo("end", anchor: .bottom) }
             }
         }
         .padding(20)

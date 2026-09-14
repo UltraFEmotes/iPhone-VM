@@ -12,6 +12,7 @@ final class VMRunner: ObservableObject {
     let entry: SupportEntry
     private var process: Process?
     private var stdinPipe: Pipe?
+    private var lastCarrierAgentStart = Date.distantPast
     private let maxLogBytes = 400_000
 
     var qmpSocket: URL { vm.file("qmp.sock") }
@@ -27,6 +28,7 @@ final class VMRunner: ObservableObject {
         let simulatedSEP = entry.usesSEPSim == true
         // Phone Info properties exist only on the iPhone 11 (t8030) machine.
         let identity = entry.machine == "t8030" ? (vm.identity?.machineProperties ?? []).map { "," + $0 }.joined() : ""
+        let graphics = entry.machine == "t8030" ? vm.effectiveGraphicsMode.machineProperties.map { "," + $0 }.joined() : ""
         var machine = "\(entry.machine),trustcache=\(f("trustcache")),kaslr-off=true"
         if entry.machine == "t8030", vm.effectiveAudioMode.enablesAOPAudio {
             machine += ",aop-audio=true"
@@ -40,11 +42,11 @@ final class VMRunner: ObservableObject {
         // Window title: "iPhone 11 - iOS 14.0 beta 5 (✓)"  (✓ jailbroken, ✗ stock). Shown via QEMU -name.
         let title = "\(entry.deviceName) - iOS \(entry.ios) (\(vm.jailbroken ? "✓" : "✗"))"
         var args = [
-            "-M", machine + identity,
+            "-M", machine + identity + graphics,
             "-name", title,
             // Multi-threaded TCG spreads the emulated cores over host threads (the guest CPU is emulated;
             // Inferno's Apple SoC can't use HVF). tb-size is kept modest to avoid adding host memory pressure.
-            "-accel", "tcg,thread=multi,tb-size=\(vm.effectivePerformanceMode.tcgTBSize)",
+            "-accel", vm.effectivePerformanceMode.accelArgument,
             // The MCA (I2S) audio device is wired to QEMU's audio system; give it a Mac backend so the
             // guest's audio reaches the speakers. Without an -audiodev it silently falls back to "none".
             "-audiodev", "coreaudio,id=snd0",
@@ -83,14 +85,7 @@ final class VMRunner: ObservableObject {
     }
 
     private func displayArguments() -> [String] {
-        let mode = vm.effectiveGraphicsMode
-        // QEMU's Cocoa backend exposes framebuffer presentation options, not a Metal guest-GPU path.
-        // The non-framebuffer modes are saved as experimental choices and intentionally fall back here
-        // until the Inferno engine grows AGX emulation or a guest paravirtual graphics device.
-        switch mode {
-        case .softwareFramebuffer, .agxMetal, .paravirtualMetal:
-            return ["-display", "cocoa,zoom-to-fit=on,show-cursor=on"]
-        }
+        vm.effectiveGraphicsMode.displayArguments
     }
 
     /// Boots the VM. The companion VM is started first if needed: it provides the emulated USB link
@@ -172,14 +167,16 @@ final class VMRunner: ObservableObject {
         }
         do {
             append("[starting \(entry.deviceName) \(entry.ios)]\n")
-            if !vm.effectiveGraphicsMode.isImplemented {
-                append("[experimental graphics '\(vm.effectiveGraphicsMode.title)' is not implemented in the engine yet; using Software Framebuffer]\n")
+            if let graphicsNote = vm.effectiveGraphicsMode.launchNote {
+                append("[\(graphicsNote)]\n")
             }
             if vm.effectivePerformanceMode == .fastTCG {
-                append("[performance mode: Fast TCG; close memory-heavy apps if the Mac starts swapping]\n")
+                append("[performance mode: Fast TCG; larger TB cache and split-wx=off]\n")
+            } else if vm.effectivePerformanceMode == .lowMemory {
+                append("[performance mode: Low Memory; smaller TB cache]\n")
             }
             if vm.effectiveAudioMode == .aopCoreAudio {
-                append("[experimental audio: AOP/CoreAudio enabled; switch back to Disabled if SpringBoard panics]\n")
+                append("[experimental audio: AOP speaker/CoreAudio enabled; switch back to CoreAudio (Stable) if SpringBoard panics]\n")
             }
             try p.run()
             process = p
@@ -240,14 +237,14 @@ final class VMRunner: ObservableObject {
     }
 
     /// Asks iOS (via the companion) to pair, which shows the "Trust This Computer?" prompt in the VM.
-    func sendTrustPrompt() async {
+    func sendTrustPrompt(carrierNumber: String? = nil) async {
         note("asking iOS to trust the companion…")
         switch await Companion.sendTrustPrompt() {
         case .paired:
             note("paired ✓ — USB internet should come up within a minute")
             if vm.jailbroken {
                 note("auto-preparing carrier helpers after Trust")
-                await setupCarrier()
+                await setupCarrier(number: carrierNumber)
             }
         case .denied:
             note("iOS is refusing on this USB connection (Don't Trust was tapped). Stop and Start the VM, then press Send Trust Prompt again and tap Trust.")
@@ -299,40 +296,71 @@ final class VMRunner: ObservableObject {
         ].forEach(sendToSerial)
     }
 
-    /// Installs the carrier helper: a sqlite3 signed on the Mac with the SMS storage entitlement
-    /// (InfernoData/carrier/carrier-sqlite3), served by the companion at 192.168.178.1:8088 and pulled
-    /// into the VM. iOS's sandbox refuses the Messages folder even to root without that entitlement.
-    func setupCarrier() async {
-        note("setting up the carrier helper (installs carrier-sqlite3 + carrier-msg via apt)…")
-        // The companion serves the helper's apt repo over the VM's USB-tether network.
-        let served = await Companion.run("bash /mnt/host/carrier/serve.sh").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard served.contains("HTTP 200") else {
-            note("the companion isn't serving the carrier repo (\(served)). Start the VM's internet first (Send Trust Prompt).")
+    /// Installs the carrier helper package and configures the guest-side carrier agent.
+    func setupCarrier(number: String? = nil) async {
+        note("setting up the carrier helper (installs the broker agent + SMS helper via apt)…")
+        guard await CarrierBrokerClient.ensureReady() else {
+            note("the companion isn't serving the carrier repo. Start the VM's internet first (Send Trust Prompt).")
             return
+        }
+        let cleanNumber = number.map(CarrierStore.normalize).flatMap { $0.isEmpty ? nil : $0 }
+        let configCommand: String
+        if let cleanNumber,
+           let data = try? JSONSerialization.data(withJSONObject: ["number": cleanNumber], options: []),
+           let json = String(data: data, encoding: .utf8) {
+            configCommand = "printf %s \(Self.sh(json)) > \(Self.sh("\(MessagesDelivery.carrierHome)/config.json"));"
+        } else {
+            configCommand = ""
         }
         // The VM has no curl, so install through apt. Isolate our repo so other repos can't fail the update.
         [
             "mount -uw /",
-            "mkdir -p /usr/local/bin /etc/apt/sources.list.d /tmp/cs /var/lib/dpkg; touch /var/lib/dpkg/status",
-            "mkdir -p /tmp/othersrc; mv /etc/apt/sources.list.d/*.list /tmp/othersrc/ 2>/dev/null",
+            "mkdir -p \(MessagesDelivery.carrierHome)/bin /usr/local/bin /etc/apt/sources.list.d /tmp/cs /var/lib/dpkg/info /var/lib/dpkg/updates /var/lib/apt/lists/partial /var/cache/apt/archives/partial; touch /var/lib/dpkg/status /var/lib/dpkg/available",
+            configCommand + " true",
+            "mkdir -p /tmp/othersrc; for f in /etc/apt/sources.list.d/*.list; do [ \"$f\" = /etc/apt/sources.list.d/carrier.list ] || mv \"$f\" /tmp/othersrc/; done 2>/dev/null || true",
             "echo 'deb [trusted=yes] http://192.168.178.1:8088/repo/ ./' > /etc/apt/sources.list.d/carrier.list",
             "rm -rf /var/lib/apt/lists/*",
             "apt-get update",
             "cd /tmp/cs && rm -f *.deb",
             "cd /tmp/cs && apt-get download --allow-unauthenticated carrier-sqlite3",
-            "cd /tmp/cs && dpkg -i --force-depends *.deb",
-            "nohup /usr/local/bin/carrier-agentd >/tmp/agent.log 2>&1 &",
+            "cd /tmp/cs && dpkg -i --force-depends --force-overwrite *.deb",
+            "mv /tmp/othersrc/*.list /etc/apt/sources.list.d/ 2>/dev/null || true",
+            agentStartCommand(number: cleanNumber),
             "test -x \(MessagesDelivery.helper) && echo CARRIER_SETUP_DONE || echo CARRIER_SETUP_FAILED",
         ].forEach(sendToSerial)
+        lastCarrierAgentStart = Date()
         note("installing… watch for CARRIER_SETUP_DONE below, then use the Carrier console (⇧⌘K)")
     }
 
     /// Starts the guest clipboard bridge installed by Set Up Carrier. It is safe to call more than once.
     func startClipboardAgent() {
-        note("starting clipboard sync agent in the VM")
-        sendToSerial("test -x /usr/local/bin/carrier-agentd || echo CLIP_AGENT_MISSING")
-        sendToSerial("nohup /usr/local/bin/carrier-agentd >/tmp/agent.log 2>&1 &")
-        sendToSerial("echo CLIP_AGENT_STARTED")
+        startCarrierAgent()
+    }
+
+    /// Starts the guest carrier agent. It handles both clipboard and simulated carrier messages.
+    func startCarrierAgent(number: String? = nil, quiet: Bool = false) {
+        guard Date().timeIntervalSince(lastCarrierAgentStart) > 10 else { return }
+        lastCarrierAgentStart = Date()
+        if !quiet {
+            note("starting carrier sync agent in the VM")
+        }
+        sendToSerial("test -x \(MessagesDelivery.agent) || echo CARRIER_AGENT_MISSING")
+        sendToSerial(agentStartCommand(number: number.map(CarrierStore.normalize)))
+        sendToSerial("echo CARRIER_AGENT_STARTED")
+    }
+
+    private func agentStartCommand(number: String?) -> String {
+        let cleanNumber = number.flatMap { CarrierStore.normalize($0).isEmpty ? nil : CarrierStore.normalize($0) }
+        let configCommand: String
+        if let cleanNumber,
+           let data = try? JSONSerialization.data(withJSONObject: ["number": cleanNumber], options: []),
+           let json = String(data: data, encoding: .utf8) {
+            configCommand = "mkdir -p \(Self.sh(MessagesDelivery.carrierHome)); printf %s \(Self.sh(json)) > \(Self.sh("\(MessagesDelivery.carrierHome)/config.json"));"
+        } else {
+            configCommand = "mkdir -p \(Self.sh(MessagesDelivery.carrierHome));"
+        }
+        let numberArg = cleanNumber.map { " --number \(Self.sh($0))" } ?? ""
+        return "\(configCommand) launchctl kickstart -k system/com.infernophone.carrier-agentd 2>/dev/null || (killall carrier-agentd 2>/dev/null || true; nohup \(Self.sh(MessagesDelivery.agent))\(numberArg) >/tmp/agent.log 2>&1 &)"
     }
 
     /// Sideloads an .ipa into /Applications of a running jailbroken VM, the way jailbreak tools do:
@@ -402,6 +430,11 @@ final class VMRunner: ObservableObject {
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let name = plist["CFBundleExecutable"] as? String else { return nil }
         return app.appendingPathComponent(name)
+    }
+
+    /// Single-quotes a value for the guest shell.
+    private static func sh(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// Restarts the companion's tethering (DHCP/NAT) in case the VM lost internet.

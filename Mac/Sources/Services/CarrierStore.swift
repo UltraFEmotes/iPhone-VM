@@ -93,6 +93,7 @@ final class CarrierStore: ObservableObject {
         lines.removeAll { $0.vmID == vmID }
         if !clean.isEmpty { lines.append(Line(vmID: vmID, number: clean)) }
         save()
+        Task { @MainActor in await self.publishLinesIfPossible() }
     }
 
     /// Next free number in a fake +1 555 range.
@@ -122,9 +123,10 @@ final class CarrierStore: ObservableObject {
     /// incoming carrier texts. If the reply is addressed to another VM's number, it's delivered there too
     /// (VM-to-VM texting). Call this on a timer while the carrier console is open.
     func pollReplies() async {
+        await publishLinesIfPossible()
         for line in lines {
             let baseline = lastReplyRowID[line.vmID]
-            let result = await delivery.readReplies(vmID: line.vmID, since: baseline ?? 0)
+            let result = await delivery.readReplies(vmID: line.vmID, number: line.number, since: baseline ?? 0)
             // First time we see this VM, remember where it is and don't replay its existing sent messages.
             if baseline == nil {
                 lastReplyRowID[line.vmID] = result.lastRowID
@@ -137,10 +139,16 @@ final class CarrierStore: ObservableObject {
                 let to = Self.normalize(reply.to)
                 var m = Message(kind: .text, from: line.number, to: to, body: reply.body, delivered: true, note: "from VM")
                 if let destVM = vmID(for: to), destVM != line.vmID {
-                    do { try await delivery.deliver(m, to: destVM) }
-                    catch { m.delivered = false; m.note = error.localizedDescription }
+                    if delivery.routesVMReplies {
+                        m.note = "from VM via broker"
+                    } else {
+                        do { try await delivery.deliver(m, to: destVM) }
+                        catch { m.delivered = false; m.note = error.localizedDescription }
+                    }
                 }
-                messages.append(m)
+                if !containsDuplicate(m) {
+                    messages.append(m)
+                }
             }
             if messages.count > 2000 { messages.removeFirst(messages.count - 2000) }
             save()
@@ -148,6 +156,7 @@ final class CarrierStore: ObservableObject {
     }
 
     private func route(_ message: Message) async {
+        await publishLinesIfPossible()
         var m = message
         m.delivered = true                          // recorded on the Mac carrier
         // If the recipient is a running jailbroken VM, mirror it into the real Messages app and show failures.
@@ -199,17 +208,39 @@ final class CarrierStore: ObservableObject {
         if let vmID = vmID(for: n), let name = vmName(vmID) { return name }
         return contacts[n] ?? n
     }
+
+    private func containsDuplicate(_ message: Message) -> Bool {
+        messages.contains {
+            $0.kind == message.kind &&
+            $0.from == message.from &&
+            $0.to == message.to &&
+            $0.body == message.body &&
+            abs($0.date.timeIntervalSince(message.date)) < 2
+        }
+    }
+
+    private func publishLinesIfPossible() async {
+        _ = await CarrierBrokerClient.post(
+            "/api/lines",
+            body: BrokerLinesRequest(lines: lines.map { BrokerLine(number: $0.number, vmID: $0.vmID.uuidString) }),
+            as: BrokerOK.self
+        )
+    }
 }
 
 /// How a routed message reaches iOS inside the VM, and how replies come back out.
+@MainActor
 protocol CarrierDelivery {
+    var routesVMReplies: Bool { get }
     func deliver(_ message: CarrierStore.Message, to vmID: UUID) async throws
     /// Texts the VM's user sent (is_from_me) with a ROWID greater than `since`, plus the new high-water ROWID.
-    func readReplies(vmID: UUID, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int)
+    func readReplies(vmID: UUID, number: String, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int)
 }
 
 extension CarrierDelivery {
-    func readReplies(vmID: UUID, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int) {
+    var routesVMReplies: Bool { false }
+
+    func readReplies(vmID: UUID, number: String, since: Int) async -> (messages: [(to: String, body: String)], lastRowID: Int) {
         ([], since)
     }
 }
@@ -218,4 +249,22 @@ struct LogOnlyDelivery: CarrierDelivery {
     func deliver(_ message: CarrierStore.Message, to vmID: UUID) async throws {
         throw SetupError("Logged only — in-VM delivery isn't set up yet")
     }
+}
+
+private struct BrokerLine: Encodable {
+    let number: String
+    let vmID: String
+
+    enum CodingKeys: String, CodingKey {
+        case number
+        case vmID = "vm_id"
+    }
+}
+
+private struct BrokerLinesRequest: Encodable {
+    let lines: [BrokerLine]
+}
+
+private struct BrokerOK: Decodable {
+    let ok: Bool
 }

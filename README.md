@@ -17,7 +17,7 @@ All the hard emulation work is theirs. This project automates the setup their
 |---|---|---|
 | **InfernoMac** (`Mac/`) | macOS on Apple Silicon | Works on the author's Mac with iPhone 11 / iOS 14.0 beta 5 |
 | **InfernoWin** (`Windows/InfernoWin`, `Windows/wsl`) | Windows 10/11 with WSL2 | Builds; never run on Windows |
-| **iphone-vm** (`Linux/`) | Linux (Arch or Debian/Ubuntu, x86_64 or arm64) | Command-line tool; tested on Debian, full install not yet run |
+| **iphone-vm** (`Linux/`) | Linux (Arch, Debian/Ubuntu, Fedora, openSUSE, Alpine, Gentoo, Void; x86_64 or arm64) | Command-line and browser UI; restores, patches and boots on Arch, other distros unverified |
 | **Native Windows build** (`Windows/ci`) | Windows without WSL | Inferno compiles for Windows (MSYS2); only a smoke test so far |
 
 ## Features (InfernoMac)
@@ -64,6 +64,7 @@ which Arch doesn't package, and needs no AUR helper). Download **iphone-vm-linux
 ```
 ./iphone-vm install        # builds Inferno + the companion VM (asks for sudo)
 ./iphone-vm new iPhone12,1-18A5351d --jailbreak
+./iphone-vm config <id> --graphics smooth --performance fast --audio stable
 ./iphone-vm setup <id>     # downloads iOS from Apple, restores, patches
 ./iphone-vm start <id>
 ```

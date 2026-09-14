@@ -1,8 +1,8 @@
 iphone-vm for Linux: an emulated iPhone, powered by ChefKiss Inferno
 =====================================================================
 
-EXPERIMENTAL. The command-line tool has been tested on Debian (arm64). The full install, setup and boot haven't
-been run end-to-end on Linux yet. Please report what happens.
+EXPERIMENTAL. The command-line and browser workflows have been smoke-tested on Debian (arm64). The full distro,
+hardware and real-VM boot matrix has not been verified yet. Please report what happens.
 
 Needs
 -----
@@ -38,6 +38,7 @@ Quick start
     ./iphone-vm install                 # builds Inferno + the companion VM (20-60 min, asks for sudo)
     ./iphone-vm versions                # what you can create
     ./iphone-vm new iPhone12,1-18A5351d --jailbreak
+    ./iphone-vm config <id> --graphics smooth --performance fast --audio stable
     ./iphone-vm setup <id>              # downloads iOS from Apple, restores and patches it
     ./iphone-vm start <id>              # this terminal becomes the phone's serial console
 
@@ -46,6 +47,7 @@ Commands
     install [--all-engines]    one-time setup (--all-engines: also build the iOS 15-18 emulators, +1 hour)
     versions [--all]           supported devices/iOS versions (--all includes experimental ones)
     new <version> [--name N] [--jailbreak]
+    config <vm> [--graphics default|smooth|fast-half] [--performance balanced|fast|low-memory] [--audio stable|aop|disabled]
     list                       your VMs
     setup <vm>                 resumes where it stopped if interrupted
     start <vm> / stop <vm>
@@ -56,6 +58,11 @@ Commands
     delete <vm> [--yes]
 
 <vm> is a VM's name or the start of its ID. Data lives in ~/.local/share/iphone-vm (set INFERNO_DATA to change it).
+
+The profiles are experimental and apply on the next start. Smooth Full-Res keeps the native 828x1792 framebuffer,
+Fast Half-Res uses 414x896 to reduce display-copy work, Fast TCG enlarges the translation cache, and AOP audio
+enables the speaker-only AOP path when the Linux QEMU build exposes it. Stable audio uses the first available host
+backend (PipeWire, PulseAudio, ALSA, SDL or OSS).
 
 Inside a jailbroken VM the console is a root shell: try  mount -uw /  then apt.
 

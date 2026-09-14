@@ -8,8 +8,22 @@ sudo mkdir -p /mnt/host
 mountpoint -q /mnt/host || sudo mount -t 9p -o trans=virtio,version=9p2000.L,msize=512000 host /mnt/host
 F=/mnt/host/companion-files
 
+pkg_available() { apt-cache show "$1" >/dev/null 2>&1; }
+apt_install() { sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"; }
+apt_install_one_of() {
+    local pkg
+    for pkg in "$@"; do
+        if pkg_available "$pkg"; then
+            apt_install "$pkg"
+            return 0
+        fi
+    done
+    echo "none of these packages is available: $*" >&2
+    exit 1
+}
+
 sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git autoconf automake libtool pkg-config \
+apt_install build-essential git autoconf automake libtool pkg-config \
     libssl-dev libusb-1.0-0-dev libcurl4-openssl-dev libreadline-dev libzip-dev zlib1g-dev python3-dev cython3 udev \
     dnsmasq iptables cmake python3 xz-utils
 # Windows and Linux patch the iPhone disk inside the companion with the Linux APFS driver; macOS does it
@@ -21,7 +35,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential git autoc
 # with "seek failed ... out of range". v0.3.21 writes the same file without complaint.
 APFS_VERSION=v0.3.21
 if [ "${INFERNO_SKIP_APFS:-0}" != 1 ]; then
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-headers-$(dpkg --print-architecture)"
+    apt_install dkms
+    apt_install_one_of "linux-headers-$(uname -r)" "linux-headers-$(dpkg --print-architecture)"
     if [ "$(cat /var/lib/inferno-apfs-version 2>/dev/null)" != "$APFS_VERSION" ]; then
         # Drop Debian's module so the upstream one is the only apfs.ko modprobe can find.
         sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y apfs-dkms 2>/dev/null || true

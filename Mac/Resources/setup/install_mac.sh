@@ -37,6 +37,160 @@ if "#ifndef SEP_USE_VERSION_OVERRIDE" not in s:
     assert old in s, "sep.c changed upstream; the per-iOS engines can't be built"
     open(p, "w").write(s.replace(old, "#ifndef SEP_USE_VERSION_OVERRIDE\n" + old + "#endif\n", 1))
 EOF
+python3 - <<'EOF'
+from pathlib import Path
+
+def patch_once(path, old, new, marker, reason):
+    p = Path(path)
+    s = p.read_text()
+    if marker in s:
+        return
+    if old not in s:
+        raise SystemExit(f"{path} changed upstream; cannot patch {reason}")
+    p.write_text(s.replace(old, new, 1))
+
+patch_once(
+    "Inferno/hw/arm/apple-silicon/t8030.c",
+    """    // sbd = apple_aop_audio_create(APPLE_AOP(aop));
+    // assert_nonnull(sbd);
+    // object_property_add_child(OBJECT(aop), \"aop-audio\", OBJECT(sbd));
+    // sysbus_realize_and_unref(sbd, &error_fatal);
+""",
+    """    if (t8030->aop_audio) {
+        sbd = apple_aop_audio_create(APPLE_AOP(aop));
+        assert_nonnull(sbd);
+        object_property_add_child(OBJECT(aop), \"aop-audio\", OBJECT(sbd));
+        sysbus_realize_and_unref(sbd, &error_fatal);
+    }
+""",
+    "t8030->aop_audio",
+    "AOP audio creation",
+)
+patch_once(
+    "Inferno/hw/arm/apple-silicon/t8030.c",
+    "PROP_GETTER_SETTER(bool, force_dfu);\n",
+    "PROP_GETTER_SETTER(bool, force_dfu);\nPROP_GETTER_SETTER(bool, aop_audio);\n",
+    "PROP_GETTER_SETTER(bool, aop_audio);",
+    "AOP audio getter/setter",
+)
+patch_once(
+    "Inferno/hw/arm/apple-silicon/t8030.c",
+    """    object_class_property_add_bool(klass, \"force-dfu\", t8030_get_force_dfu,
+                                   t8030_set_force_dfu);
+    object_class_property_set_description(klass, \"force-dfu\", \"Force DFU\");
+""",
+    """    object_class_property_add_bool(klass, \"force-dfu\", t8030_get_force_dfu,
+                                   t8030_set_force_dfu);
+    object_class_property_set_description(klass, \"force-dfu\", \"Force DFU\");
+    object_class_property_add_bool(klass, \"aop-audio\", t8030_get_aop_audio,
+                                   t8030_set_aop_audio);
+    object_class_property_set_description(klass, \"aop-audio\",
+                                          \"Enable experimental AOP audio\");
+""",
+    "object_class_property_add_bool(klass, \"aop-audio\"",
+    "AOP audio machine property",
+)
+patch_once(
+    "Inferno/include/hw/arm/apple-silicon/t8030.h",
+    "    bool force_dfu;\n",
+    "    bool force_dfu;\n    bool aop_audio;\n",
+    "bool aop_audio;",
+    "AOP audio state field",
+)
+patch_once(
+    "Inferno/hw/audio/apple-silicon/aop-audio.c",
+    """    'edtC', 'acmm', 'aphc', 'lpfw', 'leap', 'aphd', 'aph ',
+    'ahdc', 'pcmM', 'lpai', 'mca0', 'mca1', 'apac',
+""",
+    """    'edtC', 'acmm', 'aphc', 'lpfw', 'leap', 'aphd', 'aph ',
+    /*
+     * Do not advertise lpai yet. This endpoint reports zero IO handlers, and
+     * iOS 14 can spin waiting for an input buffer on the missing lpai handler.
+     */
+    'ahdc', 'pcmM', 'mca0', 'mca1', 'apac',
+""",
+    "Do not advertise lpai yet",
+    "AOP speaker-only device list",
+)
+patch_once(
+    "Inferno/hw/audio/apple-silicon/aop-audio.c",
+    """    case COMMAND_GET_DEVICE_ID:
+        AOP_DPRINTF(\"AOPAudio GetDeviceID %d\",
+                    ldl_le_p(payload + COMMAND_HDR_LEN));
+
+        stl_le_p(payload_out,
+                 apple_aop_devices[ldl_le_p(payload + COMMAND_HDR_LEN)]);
+        break;
+""",
+    """    case COMMAND_GET_DEVICE_ID: {
+        uint32_t device_index = ldl_le_p(payload + COMMAND_HDR_LEN);
+
+        AOP_DPRINTF(\"AOPAudio GetDeviceID %d\",
+                    device_index);
+
+        if (device_index >= ARRAY_SIZE(apple_aop_devices)) {
+            return AOP_RESULT_ERROR;
+        }
+        stl_le_p(payload_out, apple_aop_devices[device_index]);
+        break;
+    }
+""",
+    "uint32_t device_index = ldl_le_p(payload + COMMAND_HDR_LEN);",
+    "AOP device-id bounds check",
+)
+patch_once(
+    "Inferno/include/hw/display/apple_displaypipe_v4.h",
+    "SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr);\n",
+    """SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr,
+                               uint32_t width, uint32_t height);
+""",
+    "uint32_t width, uint32_t height);",
+    "display-pipe dynamic timing signature",
+)
+patch_once(
+    "Inferno/hw/display/apple_displaypipe_v4.c",
+    """// FIXME: Unhardcode.
+static const uint32_t adp_v4_timing_info[] = { 828, 144, 1, 1, 1792, 1, 1, 1 };
+
+SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr)
+""",
+    """SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr,
+                               uint32_t width, uint32_t height)
+""",
+    "SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr,\n                               uint32_t width, uint32_t height)",
+    "display-pipe dynamic timing entrypoint",
+)
+patch_once(
+    "Inferno/hw/display/apple_displaypipe_v4.c",
+    "    uint64_t *reg;\n    int i;\n",
+    "    uint64_t *reg;\n    uint32_t timing_info[] = { width, 144, 1, 1, height, 1, 1, 1 };\n    int i;\n",
+    "uint32_t timing_info[] = { width, 144, 1, 1, height, 1, 1, 1 };",
+    "display-pipe dynamic timing data",
+)
+patch_once(
+    "Inferno/hw/display/apple_displaypipe_v4.c",
+    """    apple_dt_set_prop(node, \"display-timing-info\", sizeof(adp_v4_timing_info),
+                      adp_v4_timing_info);
+""",
+    """    apple_dt_set_prop(node, \"display-timing-info\", sizeof(timing_info),
+                      timing_info);
+""",
+    "sizeof(timing_info)",
+    "display-pipe dynamic timing property",
+)
+patch_once(
+    "Inferno/hw/arm/apple-silicon/t8030.c",
+    """    sbd = adp_v4_from_node(
+        child, MEMORY_REGION(apple_dart_iommu_mr(dart, ldl_le_p(prop->data))));
+""",
+    """    sbd = adp_v4_from_node(
+        child, MEMORY_REGION(apple_dart_iommu_mr(dart, ldl_le_p(prop->data))),
+        t8030->disp_width, t8030->disp_height);
+""",
+    "t8030->disp_width, t8030->disp_height);",
+    "t8030 display-pipe dynamic timing call",
+)
+EOF
 ENT="$DATA/Inferno/$(cd Inferno && find . -name entitlements.plist -not -path './roms/*' | head -1)"
 [ -f "$ENT" ] || fail "hypervisor entitlements.plist not found in the Inferno source"
 PREFIX="$(brew --prefix)"
@@ -143,20 +297,6 @@ if ! "${CSSH[@]}" 'test -f /var/lib/inferno-provisioned'; then
 fi
 
 step carrier-helper
-mkdir -p carrier
-cp "$RES/serve.sh" carrier/serve.sh
-if [ ! -x carrier/carrier-sqlite3 ]; then
-    # sqlite3 for iOS, re-signed with the Messages storage entitlement (see the Set Up Carrier button).
-    if (mkdir -p carrier/build && cd carrier/build &&
-        curl -sf -A 'Debian APT-HTTP/1.3 (1.8.2)' -o sqlite3.deb \
-            https://apt.bingner.com/debs/1443.00/sqlite3_3.24.0-1_iphoneos-arm.deb &&
-        ar x sqlite3.deb && tar xf data.tar.*) &&
-       cp carrier/build/usr/bin/sqlite3 carrier/carrier-sqlite3 &&
-       codesign -f -s - --entitlements "$RES/carrier_ents.plist" carrier/carrier-sqlite3; then
-        echo "carrier helper ready"
-    else
-        echo "carrier helper skipped (optional; only needed for the simulated carrier)"
-    fi
-fi
+bash "$RES/build_carrier_repo.sh" "$DATA/carrier" || echo "carrier helper skipped (optional; only needed for the simulated carrier)"
 
 echo DONE

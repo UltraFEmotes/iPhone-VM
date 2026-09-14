@@ -1,0 +1,65 @@
+diff --git a/include/hw/display/apple_displaypipe_v4.h b/include/hw/display/apple_displaypipe_v4.h
+index 5902d6b..4a73f82 100644
+--- a/include/hw/display/apple_displaypipe_v4.h
++++ b/include/hw/display/apple_displaypipe_v4.h
+@@ -27,7 +27,8 @@
+ #define TYPE_APPLE_DISPLAY_PIPE_V4 "apple-display-pipe-v4"
+ OBJECT_DECLARE_SIMPLE_TYPE(AppleDisplayPipeV4State, APPLE_DISPLAY_PIPE_V4);
+
+-SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr);
++SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr,
++                               uint32_t width, uint32_t height);
+
+ void adp_v4_update_vram_mapping(AppleDisplayPipeV4State *s, MemoryRegion *mr,
+                                 hwaddr off, uint64_t size);
+diff --git a/hw/display/apple_displaypipe_v4.c b/hw/display/apple_displaypipe_v4.c
+index a7f6677..53f1b60 100644
+--- a/hw/display/apple_displaypipe_v4.c
++++ b/hw/display/apple_displaypipe_v4.c
+@@ -942,17 +942,15 @@ static void adp_v4_reset_hold(Object *obj, ResetType type)
+ }
+
+ // `display-timing-info`
+ // w_active, v_back_porch, v_front_porch, v_sync_pulse, h_active, h_back_porch,
+ // h_front_porch, h_sync_pulse
+-// FIXME: Unhardcode.
+-static const uint32_t adp_v4_timing_info[] = { 828, 144, 1, 1, 1792, 1, 1, 1 };
+-
+-SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr)
++SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr,
++                               uint32_t width, uint32_t height)
+ {
+     DeviceState *dev;
+     SysBusDevice *sbd;
+     AppleDisplayPipeV4State *adp;
+     AppleDTProp *prop;
+     uint64_t *reg;
++    uint32_t timing_info[] = { width, 144, 1, 1, height, 1, 1, 1 };
+     int i;
+
+     assert_nonnull(node);
+@@ -966,8 +964,8 @@ SysBusDevice *adp_v4_from_node(AppleDTNode *node, MemoryRegion *dma_mr)
+     address_space_init(&adp->dma_as, adp->dma_mr, "disp0.dma");
+
+     apple_dt_set_prop_str(node, "display-target", "DisplayTarget5");
+-    apple_dt_set_prop(node, "display-timing-info", sizeof(adp_v4_timing_info),
+-                      adp_v4_timing_info);
++    apple_dt_set_prop(node, "display-timing-info", sizeof(timing_info),
++                      timing_info);
+     apple_dt_set_prop_u32(node, "bics-param-set", 0xD);
+     apple_dt_set_prop_u32(node, "dot-pitch", 326);
+     apple_dt_set_prop_null(node, "function-brightness_update");
+diff --git a/hw/arm/apple-silicon/t8030.c b/hw/arm/apple-silicon/t8030.c
+index 8b2045b..7b884dd 100644
+--- a/hw/arm/apple-silicon/t8030.c
++++ b/hw/arm/apple-silicon/t8030.c
+@@ -2127,7 +2127,8 @@ static void t8030_create_display(AppleT8030MachineState *t8030)
+     child = apple_dt_get_node(t8030->device_tree, "arm-io/disp0");
+
+     sbd = adp_v4_from_node(
+-        child, MEMORY_REGION(apple_dart_iommu_mr(dart, ldl_le_p(prop->data))));
++        child, MEMORY_REGION(apple_dart_iommu_mr(dart, ldl_le_p(prop->data))),
++        t8030->disp_width, t8030->disp_height);
+
+     qdev_prop_set_uint32(DEVICE(sbd), "width", t8030->disp_width);
+     qdev_prop_set_uint32(DEVICE(sbd), "height", t8030->disp_height);
