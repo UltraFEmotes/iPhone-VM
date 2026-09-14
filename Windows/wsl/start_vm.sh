@@ -11,12 +11,45 @@ source "$(dirname "$0")/common.sh"
 VM="${1%/}"; ENTRY="$2"; JB="${3:-0}"; QMP="${4:-0}"; MODE="${5:-normal}"
 e() { json "$ENTRY" "$1"; }
 f() { echo "$VM/$1"; }
+vm_setting() {
+    local value
+    value=$(json "$VM/vm.json" "$1" 2>/dev/null || true)
+    [ -n "$value" ] && echo "$value" || echo "$2"
+}
 
 SEPSIM=$(e usesSEPSim); [ "$SEPSIM" = true ] || SEPSIM=false
 ENGINE=$(engine_for "$(e sepVersion)")
 [ -x "$ENGINE" ] || fail "the emulator for iOS $(e ios) isn't built ($ENGINE)"
 
-machine="$(e machine),trustcache=$(f trustcache),kaslr-off=true"
+graphics_mode="${INFERNO_GRAPHICS_MODE:-$(vm_setting graphicsMode default)}"
+performance_mode="${INFERNO_PERFORMANCE_MODE:-$(vm_setting performanceMode balanced)}"
+audio_mode="${INFERNO_AUDIO_MODE:-$(vm_setting audioMode stable)}"
+
+case "$graphics_mode" in
+    default|software) ;;
+    smooth|full-res)
+        [ "$(e machine)" = t8030 ] && GRAPHICS_PROPS=",disp-width=828,disp-height=1792" || GRAPHICS_PROPS=""
+        ;;
+    fast-half|half-res)
+        [ "$(e machine)" = t8030 ] && GRAPHICS_PROPS=",disp-width=414,disp-height=896" || GRAPHICS_PROPS=""
+        ;;
+    *) fail "unknown graphics mode '$graphics_mode' (use default, smooth or fast-half)" ;;
+esac
+
+case "$performance_mode" in
+    balanced) ACCEL="tcg,thread=multi,tb-size=256" ;;
+    fast|fast-tcg) ACCEL="tcg,thread=multi,tb-size=768,split-wx=off" ;;
+    low-memory) ACCEL="tcg,thread=multi,tb-size=128" ;;
+    *) fail "unknown performance mode '$performance_mode' (use balanced, fast or low-memory)" ;;
+esac
+
+case "$audio_mode" in
+    stable|disabled|off|aop) ;;
+    *) fail "unknown audio mode '$audio_mode' (use stable, aop or disabled)" ;;
+esac
+
+machine="$(e machine),trustcache=$(f trustcache),kaslr-off=true${GRAPHICS_PROPS:-}"
+[ "$audio_mode" = aop ] && [ "$(e machine)" = t8030 ] && machine+=",aop-audio=true"
 if [ "$SEPSIM" != true ] || [ -f "$(f root_ticket.der)" ]; then machine+=",ticket=$(f root_ticket.der)"; fi
 [ "$SEPSIM" = true ] || machine+=",sep-fw=$(f sep-firmware.img4),sep-rom=$(f "$(e sepROM)")"
 
@@ -24,7 +57,15 @@ bootargs="$(e bootArgs)"
 [ "$JB" = 1 ] && bootargs+=" launchd_unsecure_cache=1"
 
 args=(-M "$machine" -kernel "$(f kernelcache)" -dtb "$(f devicetree.im4p)" -append "$bootargs"
-      -smp "$(e cpus)" -m "$(e memory)" -monitor none)
+      -smp "$(e cpus)" -m "$(e memory)" -monitor none -accel "$ACCEL")
+if [ "$audio_mode" != disabled ] && [ "$audio_mode" != off ]; then
+    AUDIO_BACKEND=$(qemu_audio_backend "$ENGINE")
+    if [ -n "$AUDIO_BACKEND" ]; then
+        args+=(-audiodev "$AUDIO_BACKEND,id=snd0")
+    else
+        echo "[no supported QEMU audio backend found; continuing without host audio]" >&2
+    fi
+fi
 # Serial: a TCP socket for the web server, otherwise this script's stdin/stdout.
 case "${INFERNO_SERIAL:-stdio}" in
     tcp:*) args+=(-serial "tcp:${INFERNO_SERIAL#tcp:},server=on,wait=off") ;;
@@ -54,5 +95,5 @@ for spec in root:1:1:nvme-ns firmware:2:2:nvme-ns syscfg:3:3:nvme-ns ctrl_bits:4
            -device "$dev,drive=$name,bus=nvme-bus.0,nsid=$nsid,nstype=$nstype$extra,logical_block_size=4096,physical_block_size=4096")
 done
 
-echo "[starting $(e deviceName) $(e ios)]"
+echo "[starting $(e deviceName) $(e ios); graphics=$graphics_mode performance=$performance_mode audio=$audio_mode]"
 exec "$ENGINE" "${args[@]}"

@@ -8,3 +8,6 @@ Windows/InfernoWin/bin/
 Windows/InfernoWin/obj/
 
 .DS_Store
+
+__pycache__/
+*.pyc

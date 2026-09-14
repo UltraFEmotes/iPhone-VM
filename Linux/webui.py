@@ -7,7 +7,7 @@ screen is exposed over VNC through websockify + noVNC; the serial console stream
 
 Standard library only, except websockify/noVNC (Debian: apt install novnc websockify) for the screen.
 """
-import json, os, re, shlex, socket, subprocess, threading, time, html
+import json, os, re, shlex, shutil, socket, subprocess, threading, time, html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -38,18 +38,31 @@ def vm_dirs():
 
 
 def find_vm(vid):
-    for p in vm_dirs():
-        if os.path.basename(p).lower().startswith(vid.lower()):
-            return p
-    return None
+    hits = [p for p in vm_dirs() if os.path.basename(p).lower().startswith(vid.lower())]
+    return hits[0] if len(hits) == 1 else None
 
 
 def running_pid(vm):
+    if not vm:
+        return None
     try:
         out = subprocess.run(["pgrep", "-f", f"file={vm}/root,format=raw"], capture_output=True, text=True)
+        if not out.stdout.strip():
+            out = subprocess.run(["pgrep", "-f", f"file={vm}/root.qcow2"], capture_output=True, text=True)
         return int(out.stdout.split()[0]) if out.stdout.strip() else None
     except Exception:
         return None
+
+
+def safe_snapshot_path(root, name):
+    """Keep snapshot operations inside the VM's snapshots directory."""
+    if not isinstance(name, str) or not name or name in (".", "..") or "/" in name or "\\" in name or ".." in name:
+        raise ValueError("invalid snapshot name")
+    root = os.path.abspath(root)
+    path = os.path.abspath(os.path.join(root, name))
+    if os.path.dirname(path) != root:
+        raise ValueError("invalid snapshot name")
+    return path
 
 
 def vm_index(vm):
@@ -119,7 +132,10 @@ def start_vm(vm):
     serial_port = 7500 + idx
     sess = session(vm)
     sess.note("starting companion VM for USB internet")
-    run_backend([os.path.join(BACKEND, "companion.sh"), "start"], sess.append_serial and (lambda l: sess.note(l)))
+    companion_code, _ = run_backend([os.path.join(BACKEND, "companion.sh"), "start"],
+                                    sess.append_serial and (lambda l: sess.note(l)))
+    if companion_code != 0:
+        sess.note("companion failed; booting without USB internet")
 
     env = dict(os.environ, INFERNO_DISPLAY=f"vnc=127.0.0.1:{vnc_disp}", INFERNO_SERIAL=f"tcp:127.0.0.1:{serial_port}")
     sess.note(f"booting {meta.get('name')}")
@@ -253,6 +269,9 @@ class Handler(BaseHTTPRequestHandler):
                 sess.serial_sock.sendall(self._body_json().get("data", "").encode())
                 return self._send(200, {"ok": True})
             return self._send(409, {"error": "VM not running"})
+        m = re.match(r"/api/vms/([^/]+)/settings$", urlparse(self.path).path)
+        if m:
+            return self._settings(m.group(1), self._body_json())
         return self._send(404, {"error": "not found"})
 
     # ---- helpers ----
@@ -266,6 +285,9 @@ class Handler(BaseHTTPRequestHandler):
             vms.append({
                 "id": os.path.basename(p)[:8], "name": meta.get("name"), "ios": entry.get("ios"),
                 "device": entry.get("deviceName"), "jailbroken": meta.get("jailbroken", False),
+                "graphicsMode": meta.get("graphicsMode", "default"),
+                "performanceMode": meta.get("performanceMode", "balanced"),
+                "audioMode": meta.get("audioMode", "stable"),
                 "state": "running" if running_pid(p) else meta.get("state", "new"),
                 "vncWebPort": (VNC_WEB_BASE + idx) if (NOVNC_DIR and running_pid(p)) else None,
             })
@@ -287,9 +309,28 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(folder)
         json.dump(entry, open(os.path.join(folder, "entry.json"), "w"), indent=2)
         json.dump({"id": vid, "name": name or f"{entry['deviceName']} (iOS {entry['ios']})" + (" JB" if jb else ""),
-                   "entryID": eid, "jailbroken": jb, "qmpPort": port, "state": "new"},
+                   "entryID": eid, "jailbroken": jb, "qmpPort": port, "state": "new",
+                   "graphicsMode": "default", "performanceMode": "balanced", "audioMode": "stable"},
                   open(os.path.join(folder, "vm.json"), "w"), indent=2)
         return self._send(200, {"id": vid[:8]})
+
+    def _settings(self, vid, body):
+        vm = find_vm(vid)
+        if not vm:
+            return self._send(404, {"error": "no such VM"})
+        allowed = {
+            "graphicsMode": {"default", "smooth", "fast-half"},
+            "performanceMode": {"balanced", "fast", "low-memory"},
+            "audioMode": {"stable", "aop", "disabled"},
+        }
+        if not isinstance(body, dict) or not body or any(
+                k not in allowed or not isinstance(body[k], str) or body[k] not in allowed[k] for k in body):
+            return self._send(400, {"error": "invalid VM settings"})
+        meta = load_json(os.path.join(vm, "vm.json"))
+        meta.update(body)
+        with open(os.path.join(vm, "vm.json"), "w") as fh:
+            json.dump(meta, fh, indent=2)
+        return self._send(200, {"ok": True})
 
     def _vm_action(self, vid, action, body):
         vm = find_vm(vid)
@@ -325,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
         if action == "delete":
             if running_pid(vm):
                 return self._send(409, {"error": "stop it first"})
-            subprocess.run(["rm", "-rf", vm])
+            shutil.rmtree(vm)
             return self._send(200, {"ok": True})
         return self._send(400, {"error": "unknown action"})
 
@@ -353,11 +394,16 @@ class Handler(BaseHTTPRequestHandler):
         snaps = os.path.join(vm, "snapshots")
         if act == "list":
             return self._send(200, {"snapshots": sorted(os.listdir(snaps)) if os.path.isdir(snaps) else []})
+        if act not in ("save", "restore", "delete"):
+            return self._send(400, {"error": "snapshot actions: save, restore, delete, list"})
         if not name:
             return self._send(400, {"error": "name required"})
         if act in ("save", "restore") and running_pid(vm):
             return self._send(409, {"error": "stop the VM first"})
-        dest = os.path.join(snaps, name)
+        try:
+            dest = safe_snapshot_path(snaps, name)
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)})
         if act == "save":
             if not os.path.exists(os.path.join(vm, "root")):
                 return self._send(400, {"error": "run setup first"})
@@ -374,7 +420,8 @@ class Handler(BaseHTTPRequestHandler):
                 if os.path.exists(src):
                     subprocess.run(["cp", "--reflink=auto", "--sparse=always", src, os.path.join(vm, f)])
         elif act == "delete":
-            subprocess.run(["rm", "-rf", dest])
+            if os.path.isdir(dest):
+                shutil.rmtree(dest)
         return self._send(200, {"ok": True})
 
     def _serial_stream(self, vid):
@@ -439,9 +486,14 @@ function show(v){const running=v.state==='running';
  <div class="row">${v.state==='ready'||running?`<button onclick="act('${v.id}','${running?'stop':'start'}')">${running?'Stop':'Start'}</button>`:`<button onclick="act('${v.id}','setup')">Set Up</button>`}
   ${running?"<button onclick=\"press('"+v.id+"','power')\">Power</button><button onclick=\"press('"+v.id+"','home')\">Home</button><button onclick=\"press('"+v.id+"','volup')\">Vol+</button><button onclick=\"press('"+v.id+"','voldown')\">Vol−</button><button onclick=\"act('"+v.id+"','trust')\">Trust (internet)</button>":""}
   <button onclick="delVM('${v.id}')">Delete</button></div>
+ <div class="row"><label>Graphics <select id="gfx"><option value="default">Default Framebuffer</option><option value="smooth">Smooth Full-Res</option><option value="fast-half">Fast Half-Res</option></select></label>
+  <label>Performance <select id="perf"><option value="balanced">Balanced</option><option value="fast">Fast TCG</option><option value="low-memory">Low Memory</option></select></label>
+  <label>Audio <select id="audio"><option value="stable">Stable</option><option value="aop">AOP (Experimental)</option><option value="disabled">Disabled</option></select></label>
+  <button onclick="saveSettings('${v.id}')">Apply on next start</button></div>
  <div id="sc" class="pane">${v.vncWebPort?`<iframe src="//${location.hostname}:${v.vncWebPort}/vnc.html?autoconnect=1&resize=scale"></iframe>`:'<small>Start the VM to see the screen (noVNC required on the server).</small>'}</div>
  <div id="co" class="pane" style="display:none"><pre id="serial">connecting…</pre><div class="row"><input id="cin" placeholder="type a command, Enter to send" style="flex:1" onkeydown="if(event.key==='Enter')sendCmd('${v.id}')"><button onclick="sendCmd('${v.id}')">Send</button></div></div>
  <div id="se" class="pane" style="display:none"><pre id="slog">no setup log yet</pre></div>`;
+ $('#gfx').value=v.graphicsMode||'default';$('#perf').value=v.performanceMode||'balanced';$('#audio').value=v.audioMode||'stable';
  openSerial(v.id);}
 function tab(b,id){document.querySelectorAll('.tabs button').forEach(x=>x.className='');b.className='on';
  document.querySelectorAll('.pane').forEach(p=>p.style.display='none');$('#'+id).style.display='';
@@ -451,6 +503,7 @@ function openSerial(id){if(es)es.close();es=new EventSource(`/api/vms/${id}/seri
 function sendCmd(id){const i=$('#cin');api('PUT',`/api/vms/${id}/serial`,{data:i.value+"\n"});i.value='';}
 async function act(id,a){await api('POST',`/api/vms/${id}/${a}`,{});setTimeout(refresh,600);
  if(a==='setup'){const t=setInterval(()=>api('GET',`/api/vms/${id}/setup-log`).then(r=>{const p=$('#slog');if(p){p.textContent=r.log;p.scrollTop=p.scrollHeight;}}),1500);setTimeout(()=>clearInterval(t),3600000);}}
+async function saveSettings(id){const r=await api('PUT',`/api/vms/${id}/settings`,{graphicsMode:$('#gfx').value,performanceMode:$('#perf').value,audioMode:$('#audio').value});if(r.error)alert(r.error);else{alert('Saved. Restart the VM to apply the profile.');refresh();}}
 function press(id,b){api('POST',`/api/vms/${id}/press`,{button:b});}
 async function delVM(id){if(confirm('Delete this VM and its disks?')){await api('POST',`/api/vms/${id}/delete`,{});sel=null;$('#detail').innerHTML='';refresh();}}
 async function newVM(){if(!versions.length)versions=await api('GET','/api/versions');
