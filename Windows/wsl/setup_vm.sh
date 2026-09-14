@@ -107,16 +107,50 @@ EOF" || return 1
     # Boot the restore ramdisk, then trigger the restore within its 120 s window.
     "$SCRIPTS/start_vm.sh" "$VM" "$ENTRY" 0 0 restore > "$VM/restore-boot.log" 2>&1 &
     local vmpid=$! ready=0
+    # Show the phone's own serial console and the companion's kernel log as they happen, so the whole
+    # restore is readable in one stream instead of hiding in two files. Both tails are tied to the VM's
+    # pid, so they stop by themselves when it exits.
+    tail --pid="$vmpid" -n +1 -F "$VM/restore-boot.log" 2>/dev/null | sed -u "s/^/  [phone] /" &
+    tail --pid="$vmpid" -n 0 -F "$DATA/companion.log" 2>/dev/null | sed -u "s/^/  [companion] /" &
     for _ in $(seq 150); do
         grep -q "waiting for host to trigger start of restore" "$VM/restore-boot.log" && { ready=1; break; }
         kill -0 $vmpid 2>/dev/null || break
         sleep 2
     done
-    [ $ready = 1 ] || { echo "restore ramdisk never became ready"; tail -c 1500 "$VM/restore-boot.log"; kill $vmpid 2>/dev/null; return 1; }
+    [ $ready = 1 ] || { echo "restore ramdisk never became ready"; kill $vmpid 2>/dev/null; return 1; }
     echo "ramdisk ready, running idevicerestore"
+    # idevicerestore reaches 100% as soon as the image has been sent. The phone then writes and verifies it,
+    # which is emulated CPU work that prints nothing for a long time — hours on a laptop — and looks hung.
+    # Report the VM's disk and CPU use meanwhile: if the disk stops growing but CPU time keeps climbing it is
+    # verifying, and only when neither moves for a long while is it really stuck.
+    # Report bytes the VM actually wrote (/proc/<pid>/io wchar), not the disk file's allocated size: once
+    # the image file is allocated, "size" stops growing whether the phone is writing or doing nothing at
+    # all, which makes a dead restore look identical to a working one. wchar counts write() syscalls, so
+    # it catches buffered writes; write_bytes would not, as writeback is charged to kernel threads.
+    heartbeat() {
+        local pid=$1 prev=0 w cpu quiet=0
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep 60
+            w=$(awk '/^wchar:/ {print $2}' "/proc/$pid/io" 2>/dev/null); w=${w:-0}
+            cpu=$(ps -o cputime= -p "$pid" 2>/dev/null | tr -d " ")
+            if [ "$w" -gt "$prev" ]; then
+                quiet=0
+                echo "  ...restoring: phone wrote $(((w - prev) / 1000000)) MB this minute ($((w / 1000000)) MB total), VM cpu ${cpu:-?}"
+            else
+                quiet=$((quiet + 1))
+                echo "  ...restoring: phone wrote NOTHING this minute ($quiet in a row), VM cpu ${cpu:-?}"
+                [ "$quiet" = 5 ] && echo "  note: 5 minutes without a single disk write. If the [phone] log is silent too, the restore has" \
+                    "stalled rather than slowed — USB is unstable in Inferno. Ctrl-C and run setup again to retry."
+            fi
+            prev=$w
+        done
+    }
+    heartbeat "$vmpid" &
+    local hb=$!
     local out
     out=$("${CSSH[@]}" "sudo idevicerestore --erase --restore-mode -i 0x1122334455667788 -C ~/cache \
         /mnt/host/ipsw-cache/$name -T /mnt/host/ipsw-cache/$(basename "$ticket") 2>&1" | tee /dev/stderr)
+    kill "$hb" 2>/dev/null
     for _ in $(seq 60); do kill -0 $vmpid 2>/dev/null || break; sleep 1; done
     kill $vmpid 2>/dev/null
     rm -f "$ticket"
@@ -133,8 +167,14 @@ patch() {
     [ -f "$VM/root.prepatch" ] || cp --sparse=always "$VM/root" "$VM/root.prepatch"
     "$SCRIPTS/companion.sh" stop
     EXTRA_DRIVE="$VM/root" "$SCRIPTS/companion.sh" start || return 1
+    # The APFS driver reports mount and write trouble to the companion's kernel log, not to the patch
+    # script, so show that too while the patch runs.
+    stream_companion() { tail -n 0 -F "$DATA/companion.log" 2>/dev/null | sed -u "s/^/  [companion] /"; }
+    stream_companion &
+    local ctail=$!
     local out
     out=$("${CSSH[@]}" "sudo bash /mnt/host/companion-files/patch_in_companion.sh '$VM_IN_COMPANION' '$JB'" 2>&1 | tee /dev/stderr)
+    pkill -P "$ctail" 2>/dev/null; kill "$ctail" 2>/dev/null
     "$SCRIPTS/companion.sh" stop
     "$SCRIPTS/companion.sh" start
     echo "$out" | grep -q FS_PATCHES_DONE || { echo "filesystem patch did not complete (untouched copy kept as root.prepatch)"; return 1; }

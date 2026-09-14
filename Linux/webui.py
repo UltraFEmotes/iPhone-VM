@@ -5,7 +5,7 @@ Started by `iphone-vm web <port>`. Serves a single-page UI plus a small REST API
 backend scripts (install, versions, new, setup, start, stop, press, trust, snapshot, delete). The phone
 screen is exposed over VNC through websockify + noVNC; the serial console streams over Server-Sent Events.
 
-Standard library only, except websockify/noVNC (Debian: apt install novnc websockify) for the screen.
+Standard library only, except websockify/noVNC (see novnc_hint() below) for the screen.
 """
 import json, os, re, shlex, shutil, socket, subprocess, threading, time, html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +18,22 @@ VMS = os.path.join(DATA, "VMs")
 TOKEN = os.environ.get("INFERNO_WEB_TOKEN", "")
 VNC_WEB_BASE = int(os.environ.get("INFERNO_VNC_WEB_BASE", "6080"))  # per-VM noVNC ports: base, base+1, ...
 NOVNC_DIR = next((d for d in ("/usr/share/novnc", "/usr/share/webapps/novnc") if os.path.isdir(d)), None)
+# Arch packages noVNC and websockify separately (both from the AUR), so check for each one.
+NOVNC_OK = bool(NOVNC_DIR) and shutil.which("websockify") is not None
+
+
+def novnc_hint():
+    """How to install noVNC and websockify on this distro."""
+    try:
+        with open("/etc/os-release") as fh:
+            ids = fh.read()
+    except OSError:
+        ids = ""
+    if re.search(r"^ID(_LIKE)?=.*\b(arch|archlinux)\b", ids, re.M):
+        return "AUR: yay -S novnc python-websockify"
+    if re.search(r"^ID(_LIKE)?=.*\b(debian|ubuntu)\b", ids, re.M):
+        return "sudo apt install novnc websockify"
+    return "install novnc and websockify"
 STATE_FILES = ["root", "firmware", "syscfg", "ctrl_bits", "nvram", "effaceable", "panic_log", "sep_nvram", "sep_ssc"]
 
 
@@ -142,12 +158,12 @@ def start_vm(vm):
     sess.qemu = subprocess.Popen([os.path.join(BACKEND, "start_vm.sh"), vm, entry, jb, qmp],
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     threading.Thread(target=_pump_serial, args=(sess, serial_port), daemon=True).start()
-    if NOVNC_DIR:
+    if NOVNC_OK:
         web_port = VNC_WEB_BASE + idx
         _kill_port(web_port)
         sess.novnc = subprocess.Popen(["websockify", "--web", NOVNC_DIR, str(web_port), f"127.0.0.1:{5900 + vnc_disp}"],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return {"vncWebPort": VNC_WEB_BASE + idx if NOVNC_DIR else None}
+    return {"vncWebPort": VNC_WEB_BASE + idx if NOVNC_OK else None}
 
 
 def _pump_serial(sess, port):
@@ -289,10 +305,10 @@ class Handler(BaseHTTPRequestHandler):
                 "performanceMode": meta.get("performanceMode", "balanced"),
                 "audioMode": meta.get("audioMode", "stable"),
                 "state": "running" if running_pid(p) else meta.get("state", "new"),
-                "vncWebPort": (VNC_WEB_BASE + idx) if (NOVNC_DIR and running_pid(p)) else None,
+                "vncWebPort": (VNC_WEB_BASE + idx) if (NOVNC_OK and running_pid(p)) else None,
             })
         return {"vms": vms, "installed": os.path.exists(os.path.join(DATA, "Inferno", "build", "qemu-system-aarch64")),
-                "novnc": bool(NOVNC_DIR)}
+                "novnc": NOVNC_OK}
 
     def _new_vm(self, body):
         eid, name, jb = body.get("version"), body.get("name", ""), bool(body.get("jailbreak"))
@@ -527,8 +543,8 @@ def main():
     print(f"iphone-vm web UI: http://{where}:{port}/" + (f"?token={TOKEN}" if TOKEN else ""))
     if host == "0.0.0.0" and not TOKEN:
         print("WARNING: bound to all interfaces with no token — anyone on your network can control the VMs.")
-    if not NOVNC_DIR:
-        print("note: noVNC not found (apt install novnc websockify) — the phone screen won't show in the browser.")
+    if not NOVNC_OK:
+        print(f"note: noVNC/websockify not found ({novnc_hint()}) — the phone screen won't show in the browser.")
     srv.serve_forever()
 
 
