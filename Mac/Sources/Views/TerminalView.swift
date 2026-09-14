@@ -61,7 +61,7 @@ struct TerminalView: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .background(Color(nsColor: .textBackgroundColor))
-                .onChange(of: runner.log) { _, _ in
+                .onChange(of: runner.log) { _ in
                     if autoScroll { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }

@@ -26,3 +26,42 @@ index 3e53c81..b6bbde6 100644
 +++ b/include/hw/arm/apple-silicon/t8030.h
 @@ -73,0 +74 @@ typedef struct {
 +    bool aop_audio;
+diff --git a/hw/audio/apple-silicon/aop-audio.c b/hw/audio/apple-silicon/aop-audio.c
+index 5b61a11..5a9f77d 100644
+--- a/hw/audio/apple-silicon/aop-audio.c
++++ b/hw/audio/apple-silicon/aop-audio.c
+@@ -101,7 +101,12 @@ type_init(apple_aop_audio_register_types);
+ // - apac | AOP Audio Controller?
+ static const uint32_t apple_aop_devices[] = {
+     'edtC', 'acmm', 'aphc', 'lpfw', 'leap', 'aphd', 'aph ',
+-    'ahdc', 'pcmM', 'lpai', 'mca0', 'mca1', 'apac',
++    /*
++     * Do not advertise lpai yet. This endpoint reports zero IO handlers, and
++     * iOS 14 can spin waiting for an input buffer on the missing lpai handler.
++     */
++    'ahdc', 'pcmM', 'mca0', 'mca1', 'apac',
+ };
+
+ static AppleAOPResult apple_aop_audio_get_prop(void *opaque, uint32_t prop,
+@@ -146,14 +151,18 @@ static AppleAOPResult apple_aop_audio_handle_command(void *opaque, uint16_t seq,
+
+     switch (ldl_le_p(payload + sizeof(uint32_t))) {
+-    case COMMAND_GET_DEVICE_ID:
++    case COMMAND_GET_DEVICE_ID: {
++        uint32_t device_index = ldl_le_p(payload + COMMAND_HDR_LEN);
++
+         AOP_DPRINTF("AOPAudio GetDeviceID %d",
+-                    ldl_le_p(payload + COMMAND_HDR_LEN));
++                    device_index);
+
+-        stl_le_p(payload_out,
+-                 apple_aop_devices[ldl_le_p(payload + COMMAND_HDR_LEN)]);
++        if (device_index >= ARRAY_SIZE(apple_aop_devices)) {
++            return AOP_RESULT_ERROR;
++        }
++        stl_le_p(payload_out, apple_aop_devices[device_index]);
+         break;
++    }
+     case COMMAND_GET_DEVICE_PROP:
+         AOP_DPRINTF("AOPAudio GetDeviceProperty %X 0x%X",
+                     ldl_le_p(payload + COMMAND_HDR_LEN),

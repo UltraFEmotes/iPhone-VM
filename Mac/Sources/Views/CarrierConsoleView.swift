@@ -16,11 +16,11 @@ struct CarrierConsoleView: View {
     @AppStorage("carrier.liveReplies") private var liveReplies = true
 
     var body: some View {
-        NavigationSplitView {
+        NavigationView {
             sidebar
-        } detail: {
             conversationPane
         }
+        .navigationViewStyle(.columns)
         .frame(minWidth: 820, minHeight: 520)
         .onAppear { if me.isEmpty { me = carrier.lines.first?.number ?? "+15550100" } }
         .task {
@@ -72,7 +72,7 @@ struct CarrierConsoleView: View {
             }
             .padding(12)
         }
-        .navigationSplitViewColumnWidth(min: 240, ideal: 270)
+        .frame(minWidth: 240, idealWidth: 270)
     }
 
     private func conversationRow(_ other: String) -> some View {
@@ -109,21 +109,33 @@ struct CarrierConsoleView: View {
                         }
                         .padding(12)
                     }
-                    .onChange(of: carrier.messages.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                    .onChange(of: carrier.messages.count) { _ in proxy.scrollTo("end", anchor: .bottom) }
                     .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 }
 
                 Divider()
-                HStack {
-                    TextField("Text \(label(peer)) as \(label(me))", text: $draft, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).lineLimit(1...4).onSubmit(sendText)
+                HStack(alignment: .bottom) {
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $draft)
+                            .font(.body)
+                            .frame(minHeight: 28, idealHeight: 52, maxHeight: 88)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor)))
+                            .onSubmit(sendText)
+                        if draft.isEmpty {
+                            Text("Text \(label(peer)) as \(label(me))")
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 8)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     Button("Send", action: sendText).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 .padding(12)
             }
         } else {
-            ContentUnavailableView("Pick a conversation", systemImage: "bubble.left.and.bubble.right",
-                                   description: Text("Choose who you're speaking as, then a conversation — or start a new one."))
+            EmptyStateView("Pick a conversation", systemImage: "bubble.left.and.bubble.right",
+                           message: "Choose who you're speaking as, then a conversation — or start a new one.")
         }
     }
 

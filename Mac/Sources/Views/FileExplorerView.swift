@@ -16,12 +16,12 @@ struct FileExplorerView: View {
     var body: some View {
         Group {
             if !browser.canBrowse {
-                ContentUnavailableView("Can't browse this VM's disk",
-                                       systemImage: "externaldrive.badge.xmark",
-                                       description: Text("Its disk is stored compressed (qcow2). VMs set up in this app use a raw disk and can be browsed."))
+                EmptyStateView("Can't browse this VM's disk",
+                               systemImage: "externaldrive.badge.xmark",
+                               message: "Its disk is stored compressed (qcow2). VMs set up in this app use a raw disk and can be browsed.")
             } else if isRunning {
-                ContentUnavailableView("Stop the VM to browse its files", systemImage: "stop.circle",
-                                       description: Text("The disk is attached read-only on the Mac, which isn't safe while iOS is using it."))
+                EmptyStateView("Stop the VM to browse its files", systemImage: "stop.circle",
+                               message: "The disk is attached read-only on the Mac, which isn't safe while iOS is using it.")
             } else if browser.mountPoint == nil {
                 VStack(spacing: 12) {
                     Image(systemName: "folder").font(.system(size: 44)).foregroundStyle(.secondary)
@@ -37,7 +37,7 @@ struct FileExplorerView: View {
             }
         }
         .onDisappear { Task { await browser.detach() } }
-        .onChange(of: isRunning) { _, running in if running { Task { await browser.detach() } } }
+        .onChange(of: isRunning) { running in if running { Task { await browser.detach() } } }
     }
 
     private var browserBody: some View {

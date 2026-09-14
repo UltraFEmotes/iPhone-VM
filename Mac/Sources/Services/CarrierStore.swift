@@ -229,6 +229,7 @@ final class CarrierStore: ObservableObject {
 }
 
 /// How a routed message reaches iOS inside the VM, and how replies come back out.
+@MainActor
 protocol CarrierDelivery {
     var routesVMReplies: Bool { get }
     func deliver(_ message: CarrierStore.Message, to vmID: UUID) async throws

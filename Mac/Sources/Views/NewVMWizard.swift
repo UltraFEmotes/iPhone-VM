@@ -60,8 +60,8 @@ struct NewVMWizard: View {
 
                 TextField("Name", text: $name, prompt: Text(defaultName))
             }
-            .onChange(of: deviceName) { _, _ in entryID = versions.first?.id }
-            .onChange(of: entryID) { _, _ in if !canJailbreak { jailbroken = false } }
+            .onChange(of: deviceName) { _ in entryID = versions.first?.id }
+            .onChange(of: entryID) { _ in if !canJailbreak { jailbroken = false } }
 
             if let entry = selectedEntry {
                 Text("Downloads \(ByteCountFormatter.string(fromByteCount: entry.ipswSize, countStyle: .file)) of firmware from Apple and needs about 15 GB free.")

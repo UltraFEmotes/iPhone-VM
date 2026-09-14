@@ -15,25 +15,56 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
 
         var title: String {
             switch self {
-            case .softwareFramebuffer: return "Software Framebuffer"
-            case .agxMetal: return "AGX -> Metal"
-            case .paravirtualMetal: return "Paravirtual Metal"
+            case .softwareFramebuffer: return "Default Framebuffer"
+            case .agxMetal: return "Smooth Full-Res"
+            case .paravirtualMetal: return "Fast Half-Res"
             }
         }
 
         var detail: String {
             switch self {
             case .softwareFramebuffer:
-                return "Current working path: iOS renders to the emulated display pipe, QEMU presents the framebuffer."
+                return "The normal 828x1792 iPhone framebuffer with QEMU's Cocoa display path."
             case .agxMetal:
-                return "Experimental placeholder: future Apple GPU command emulation translated to Metal."
+                return "Keeps the native framebuffer and enables Cocoa scaling interpolation for the best-looking host presentation available in this engine."
             case .paravirtualMetal:
-                return "Experimental placeholder: future guest bridge that bypasses the stock iOS graphics stack."
+                return "Runs a 414x896 framebuffer to cut display-copy work by about 75%. Faster, but visibly lower resolution."
             }
         }
 
         var isImplemented: Bool {
-            self == .softwareFramebuffer
+            true
+        }
+
+        var machineProperties: [String] {
+            switch self {
+            case .softwareFramebuffer:
+                return []
+            case .agxMetal:
+                return ["disp-width=828", "disp-height=1792"]
+            case .paravirtualMetal:
+                return ["disp-width=414", "disp-height=896"]
+            }
+        }
+
+        var displayArguments: [String] {
+            switch self {
+            case .softwareFramebuffer, .paravirtualMetal:
+                return ["-display", "cocoa,zoom-to-fit=on,show-cursor=on"]
+            case .agxMetal:
+                return ["-display", "cocoa,zoom-to-fit=on,show-cursor=on,zoom-interpolation=on"]
+            }
+        }
+
+        var launchNote: String? {
+            switch self {
+            case .softwareFramebuffer:
+                return nil
+            case .agxMetal:
+                return "graphics mode: Smooth Full-Res; Cocoa interpolation enabled"
+            case .paravirtualMetal:
+                return "graphics mode: Fast Half-Res; using a 414x896 framebuffer"
+            }
         }
     }
 
@@ -55,9 +86,9 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
         var detail: String {
             switch self {
             case .balanced:
-                return "Uses the current multi-threaded TCG settings with a moderate translation cache."
+                return "Uses multi-threaded TCG with a moderate translation cache and conservative JIT memory mappings."
             case .fastTCG:
-                return "Gives TCG a larger translation cache. Faster when RAM is available, worse if the Mac starts swapping."
+                return "Gives TCG a larger translation cache and disables split W/X JIT mappings for less overhead. Faster when RAM is available."
             case .lowMemory:
                 return "Uses a smaller translation cache to reduce host memory pressure."
             }
@@ -70,6 +101,14 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
             case .lowMemory: return 128
             }
         }
+
+        var accelArgument: String {
+            var parts = ["tcg", "thread=multi", "tb-size=\(tcgTBSize)"]
+            if self == .fastTCG {
+                parts.append("split-wx=off")
+            }
+            return parts.joined(separator: ",")
+        }
     }
 
     enum AudioMode: String, Codable, CaseIterable, Identifiable {
@@ -80,17 +119,17 @@ struct VirtualMachine: Codable, Identifiable, Hashable {
 
         var title: String {
             switch self {
-            case .disabled: return "Disabled"
-            case .aopCoreAudio: return "AOP CoreAudio"
+            case .disabled: return "CoreAudio (Stable)"
+            case .aopCoreAudio: return "AOP Speaker CoreAudio"
             }
         }
 
         var detail: String {
             switch self {
             case .disabled:
-                return "Stable default. Does not expose the unfinished AOP audio service to iOS."
+                return "Stable default. Keeps the MCA/CoreAudio output backend wired, but does not expose the unfinished AOP audio service to iOS."
             case .aopCoreAudio:
-                return "Experimental. Exposes Inferno's AOP audio service and QEMU's CoreAudio backend."
+                return "Experimental. Exposes Inferno's AOP audio service in a speaker-only profile and uses QEMU's CoreAudio backend."
             }
         }
 
@@ -171,7 +210,7 @@ final class VMStore: ObservableObject {
     @Published private(set) var machines: [VirtualMachine] = []
     let manifest = SupportManifest.loadBundled()
 
-    static let vmsRoot: URL = {
+    nonisolated static let vmsRoot: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("InfernoMac/VMs", isDirectory: true)
     }()

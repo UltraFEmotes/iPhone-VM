@@ -118,7 +118,6 @@ struct VMDetailView: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .disabled(!runner.isRunning)
         .overlay { if !runner.isRunning { Text("Start the VM to use these.").foregroundStyle(.secondary) } }
     }
@@ -156,11 +155,6 @@ struct VMDetailView: View {
                 Text(currentGraphicsMode.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if !currentGraphicsMode.isImplemented {
-                    Text("This saves the experiment choice but falls back to Software Framebuffer until the emulator engine supports it.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
                 Text("Changes apply the next time this VM starts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -178,7 +172,7 @@ struct VMDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("Experimental Audio") {
+            Section("Audio") {
                 Picker("Mode", selection: audioModeBinding) {
                     ForEach(VirtualMachine.AudioMode.allCases) { mode in
                         Text(mode.title).tag(mode)
@@ -188,7 +182,7 @@ struct VMDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if currentAudioMode == .aopCoreAudio {
-                    Text("This can trigger iOS 14 SpringBoard/kernel instability while the AOP service is incomplete.")
+                    Text("Still experimental: this avoids the known low-power mic path, but AOP itself is incomplete.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -209,7 +203,6 @@ struct VMDetailView: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     private var currentVM: VirtualMachine {

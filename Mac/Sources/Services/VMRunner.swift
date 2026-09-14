@@ -28,6 +28,7 @@ final class VMRunner: ObservableObject {
         let simulatedSEP = entry.usesSEPSim == true
         // Phone Info properties exist only on the iPhone 11 (t8030) machine.
         let identity = entry.machine == "t8030" ? (vm.identity?.machineProperties ?? []).map { "," + $0 }.joined() : ""
+        let graphics = entry.machine == "t8030" ? vm.effectiveGraphicsMode.machineProperties.map { "," + $0 }.joined() : ""
         var machine = "\(entry.machine),trustcache=\(f("trustcache")),kaslr-off=true"
         if entry.machine == "t8030", vm.effectiveAudioMode.enablesAOPAudio {
             machine += ",aop-audio=true"
@@ -41,11 +42,11 @@ final class VMRunner: ObservableObject {
         // Window title: "iPhone 11 - iOS 14.0 beta 5 (✓)"  (✓ jailbroken, ✗ stock). Shown via QEMU -name.
         let title = "\(entry.deviceName) - iOS \(entry.ios) (\(vm.jailbroken ? "✓" : "✗"))"
         var args = [
-            "-M", machine + identity,
+            "-M", machine + identity + graphics,
             "-name", title,
             // Multi-threaded TCG spreads the emulated cores over host threads (the guest CPU is emulated;
             // Inferno's Apple SoC can't use HVF). tb-size is kept modest to avoid adding host memory pressure.
-            "-accel", "tcg,thread=multi,tb-size=\(vm.effectivePerformanceMode.tcgTBSize)",
+            "-accel", vm.effectivePerformanceMode.accelArgument,
             // The MCA (I2S) audio device is wired to QEMU's audio system; give it a Mac backend so the
             // guest's audio reaches the speakers. Without an -audiodev it silently falls back to "none".
             "-audiodev", "coreaudio,id=snd0",
@@ -84,14 +85,7 @@ final class VMRunner: ObservableObject {
     }
 
     private func displayArguments() -> [String] {
-        let mode = vm.effectiveGraphicsMode
-        // QEMU's Cocoa backend exposes framebuffer presentation options, not a Metal guest-GPU path.
-        // The non-framebuffer modes are saved as experimental choices and intentionally fall back here
-        // until the Inferno engine grows AGX emulation or a guest paravirtual graphics device.
-        switch mode {
-        case .softwareFramebuffer, .agxMetal, .paravirtualMetal:
-            return ["-display", "cocoa,zoom-to-fit=on,show-cursor=on"]
-        }
+        vm.effectiveGraphicsMode.displayArguments
     }
 
     /// Boots the VM. The companion VM is started first if needed: it provides the emulated USB link
@@ -173,14 +167,16 @@ final class VMRunner: ObservableObject {
         }
         do {
             append("[starting \(entry.deviceName) \(entry.ios)]\n")
-            if !vm.effectiveGraphicsMode.isImplemented {
-                append("[experimental graphics '\(vm.effectiveGraphicsMode.title)' is not implemented in the engine yet; using Software Framebuffer]\n")
+            if let graphicsNote = vm.effectiveGraphicsMode.launchNote {
+                append("[\(graphicsNote)]\n")
             }
             if vm.effectivePerformanceMode == .fastTCG {
-                append("[performance mode: Fast TCG; close memory-heavy apps if the Mac starts swapping]\n")
+                append("[performance mode: Fast TCG; larger TB cache and split-wx=off]\n")
+            } else if vm.effectivePerformanceMode == .lowMemory {
+                append("[performance mode: Low Memory; smaller TB cache]\n")
             }
             if vm.effectiveAudioMode == .aopCoreAudio {
-                append("[experimental audio: AOP/CoreAudio enabled; switch back to Disabled if SpringBoard panics]\n")
+                append("[experimental audio: AOP speaker/CoreAudio enabled; switch back to CoreAudio (Stable) if SpringBoard panics]\n")
             }
             try p.run()
             process = p

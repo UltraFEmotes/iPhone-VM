@@ -46,7 +46,7 @@ struct SetupPane: View {
                         .padding(8)
                     Color.clear.frame(height: 1).id("end")
                 }
-                .onChange(of: pipeline.log) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: pipeline.log) { _ in proxy.scrollTo("end", anchor: .bottom) }
             }
             .background(Color(nsColor: .textBackgroundColor))
         }
