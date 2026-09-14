@@ -145,7 +145,10 @@ if ! lzfse_ok; then
 fi
 # Decides the configure flag below. A compile+link probe, not pkg-config: the source build above
 # installs liblzfse.a and lzfse.h with no .pc file, so pkg-config would wrongly report it missing.
-if lzfse_ok; then LZFSE_FLAG=--enable-lzfse; else LZFSE_FLAG=--disable-lzfse; fi
+LZFSE_FLAG=--disable-lzfse
+if lzfse_ok; then
+    LZFSE_FLAG=--enable-lzfse
+fi
 
 step inferno
 [ -d Inferno ] || git clone https://github.com/ChefKissInc/Inferno
