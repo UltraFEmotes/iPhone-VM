@@ -11,6 +11,7 @@ struct VMDetailView: View {
     @EnvironmentObject private var store: VMStore
     @EnvironmentObject private var registry: RunnerRegistry
     @EnvironmentObject private var clipboard: ClipboardSyncService
+    @EnvironmentObject private var carrier: CarrierStore
     @State private var tab: Tab = .vm
     @State private var showingPhoneInfo = false
     @State private var showingSnapshots = false
@@ -108,7 +109,7 @@ struct VMDetailView: View {
             }
             Section("Carrier (needs internet)") {
                 action("Set Up Carrier", help: "Installs the helper that puts Carrier Console texts into Messages") {
-                    Task { await runner.setupCarrier() }
+                    Task { await runner.setupCarrier(number: ensureCarrierNumber()) }
                 }
             }
             Section("Package Managers (needs internet)") {
@@ -126,11 +127,11 @@ struct VMDetailView: View {
         Form {
             Section("Internet") {
                 action("Send Trust Prompt", help: "Ask iOS to trust the companion (needed once for USB internet)", disabled: !runner.isRunning) {
-                    Task { await runner.sendTrustPrompt() }
+                    Task { await runner.sendTrustPrompt(carrierNumber: vm.jailbroken ? ensureCarrierNumber() : nil) }
                 }
                 if vm.jailbroken {
                     action("Repair Carrier", help: "Restart the broker and reinstall the in-VM carrier helpers", disabled: !runner.isRunning) {
-                        Task { await runner.setupCarrier() }
+                        Task { await runner.setupCarrier(number: ensureCarrierNumber()) }
                     }
                 }
                 action("Restart Internet", help: "Restart usbmuxd, tethering and DHCP on the companion", disabled: !runner.isRunning) {
@@ -295,5 +296,19 @@ struct VMDetailView: View {
     private func reloadRunnerIfStopped() {
         guard let saved = store.machines.first(where: { $0.id == vm.id }) else { return }
         registry.refresh(saved, entry: entry)
+    }
+
+    private func ensureCarrierNumber() -> String? {
+        if let number = carrier.number(for: vm.id) {
+            return number
+        }
+        let suggested = carrier.suggestNumber()
+        do {
+            try carrier.assign(suggested, to: vm.id)
+            return suggested
+        } catch {
+            runner.note("could not assign carrier number: \(error.localizedDescription)")
+            return nil
+        }
     }
 }

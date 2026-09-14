@@ -143,20 +143,6 @@ if ! "${CSSH[@]}" 'test -f /var/lib/inferno-provisioned'; then
 fi
 
 step carrier-helper
-mkdir -p carrier
-cp "$RES/serve.sh" carrier/serve.sh
-if [ ! -x carrier/carrier-sqlite3 ]; then
-    # sqlite3 for iOS, re-signed with the Messages storage entitlement (see the Set Up Carrier button).
-    if (mkdir -p carrier/build && cd carrier/build &&
-        curl -sf -A 'Debian APT-HTTP/1.3 (1.8.2)' -o sqlite3.deb \
-            https://apt.bingner.com/debs/1443.00/sqlite3_3.24.0-1_iphoneos-arm.deb &&
-        ar x sqlite3.deb && tar xf data.tar.*) &&
-       cp carrier/build/usr/bin/sqlite3 carrier/carrier-sqlite3 &&
-       codesign -f -s - --entitlements "$RES/carrier_ents.plist" carrier/carrier-sqlite3; then
-        echo "carrier helper ready"
-    else
-        echo "carrier helper skipped (optional; only needed for the simulated carrier)"
-    fi
-fi
+bash "$RES/build_carrier_repo.sh" "$DATA/carrier" || echo "carrier helper skipped (optional; only needed for the simulated carrier)"
 
 echo DONE

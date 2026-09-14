@@ -1,25 +1,50 @@
 #!/bin/bash
-# On-VM carrier helper. Short commands so nothing large goes over the serial console.
+# On-VM carrier helper. Short commands so nothing large has to cross the serial console.
 #   carrier-msg send <number> <text...>   insert an incoming text and refresh Messages live
 #   carrier-msg poll <sinceRowID>         print replies you typed (is_from_me) as ROWID:hex(to):hex(text)
+#   carrier-msg max                       print the highest sent-message ROWID
 #   carrier-msg call <number>             insert a "missed call" line
-#   carrier-msg refresh                   just restart the Messages daemons
+#   carrier-msg refresh                   restart the Messages persistence daemon
 DB=/var/mobile/Library/SMS/sms.db
-SQL=/usr/local/bin/carrier-sqlite3
-# Refresh the Messages UI by restarting only the persistence (reader) daemon. Restarting imagent too
-# makes it re-import incoming rows and duplicate them, so we leave imagent alone.
-refresh(){ launchctl kickstart -k system/com.apple.imdpersistence.IMDPersistenceAgent 2>/dev/null; }
-insert(){ # insert <number> <text>
-  local FROM="$1" TEXT="$2" G D T
-  G="CM-$(date +%s)-$RANDOM"; D=$(( ($(date +%s)-978307200)*1000000000 ))
-  T=$(printf '%s' "$TEXT" | sed "s/'/''/g")
-  printf "INSERT OR IGNORE INTO handle (id,country,service,uncanonicalized_id) VALUES ('%s','us','SMS','%s');INSERT OR IGNORE INTO chat (guid,style,state,chat_identifier,service_name,account_login) VALUES ('SMS;-;%s',45,3,'%s','SMS','E:');INSERT OR IGNORE INTO chat_handle_join (chat_id,handle_id) SELECT c.ROWID,h.ROWID FROM chat c,handle h WHERE c.chat_identifier='%s' AND h.id='%s' AND h.service='SMS';INSERT INTO message (guid,text,handle_id,service,account,date,date_delivered,is_from_me,is_finished,is_delivered,is_read,is_sent) SELECT '%s','%s',ROWID,'SMS','E:',%s,%s,0,1,1,0,0 FROM handle WHERE id='%s' AND service='SMS';INSERT INTO chat_message_join (chat_id,message_id,message_date) SELECT c.ROWID,m.ROWID,%s FROM chat c,message m WHERE c.chat_identifier='%s' AND m.guid='%s';" \
-    "$FROM" "$FROM" "$FROM" "$FROM" "$FROM" "$FROM" "$G" "$T" "$D" "$D" "$FROM" "$D" "$FROM" "$G" | "$SQL" "$DB"
+BASE=${INFERNO_CARRIER_HOME:-/var/mobile/Library/InfernoCarrier}
+SQL=${CARRIER_SQLITE:-$BASE/bin/carrier-sqlite3}
+
+refresh() {
+  launchctl kickstart -k system/com.apple.imdpersistence.IMDPersistenceAgent 2>/dev/null
 }
+
+sql_escape() {
+  printf "%s" "$1" | sed "s/'/''/g"
+}
+
+insert() {
+  local FROM="$1" TEXT="$2" G D F T
+  G="CM-$(date +%s)-$RANDOM"
+  D=$(( ($(date +%s)-978307200)*1000000000 ))
+  F=$(sql_escape "$FROM")
+  T=$(sql_escape "$TEXT")
+  printf "INSERT OR IGNORE INTO handle (id,country,service,uncanonicalized_id) VALUES ('%s','us','SMS','%s');INSERT OR IGNORE INTO chat (guid,style,state,chat_identifier,service_name,account_login) VALUES ('SMS;-;%s',45,3,'%s','SMS','E:');INSERT OR IGNORE INTO chat_handle_join (chat_id,handle_id) SELECT c.ROWID,h.ROWID FROM chat c,handle h WHERE c.chat_identifier='%s' AND h.id='%s' AND h.service='SMS';INSERT INTO message (guid,text,handle_id,service,account,date,date_delivered,is_from_me,is_finished,is_delivered,is_read,is_sent) SELECT '%s','%s',ROWID,'SMS','E:',%s,%s,0,1,1,0,0 FROM handle WHERE id='%s' AND service='SMS';INSERT INTO chat_message_join (chat_id,message_id,message_date) SELECT c.ROWID,m.ROWID,%s FROM chat c,message m WHERE c.chat_identifier='%s' AND m.guid='%s';" \
+    "$F" "$F" "$F" "$F" "$F" "$F" "$G" "$T" "$D" "$D" "$F" "$D" "$F" "$G" | "$SQL" "$DB"
+}
+
 case "$1" in
-  send)    n="$2"; shift 2; insert "$n" "$*" && refresh && echo "SENT" ;;
-  call)    insert "$2" "Missed call" && refresh && echo "CALLED" ;;
-  poll)    "$SQL" "$DB" "SELECT m.ROWID||':'||hex(h.id)||':'||hex(m.text) FROM message m JOIN handle h ON m.handle_id=h.ROWID WHERE m.is_from_me=1 AND m.ROWID>${2:-0} ORDER BY m.ROWID;" ;;
-  refresh) refresh; echo REFRESHED ;;
-  *) echo "usage: carrier-msg send <number> <text> | poll <sinceRowID> | call <number> | refresh" ;;
+  send)
+    n="$2"; shift 2
+    insert "$n" "$*" && refresh && echo "SENT"
+    ;;
+  call)
+    insert "$2" "Missed call" && refresh && echo "CALLED"
+    ;;
+  poll)
+    "$SQL" "$DB" "SELECT m.ROWID||':'||hex(h.id)||':'||hex(m.text) FROM message m JOIN handle h ON m.handle_id=h.ROWID WHERE m.is_from_me=1 AND m.ROWID>${2:-0} ORDER BY m.ROWID;"
+    ;;
+  max)
+    "$SQL" "$DB" "SELECT COALESCE(MAX(ROWID),0) FROM message WHERE is_from_me=1;"
+    ;;
+  refresh)
+    refresh; echo REFRESHED
+    ;;
+  *)
+    echo "usage: carrier-msg send <number> <text> | poll <sinceRowID> | max | call <number> | refresh"
+    ;;
 esac
